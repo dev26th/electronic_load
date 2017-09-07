@@ -1,5 +1,5 @@
 # Electronic Load
-Re-invited firmware for the electronic load 60W. Status: **beta**.
+Reinvented firmware for the electronic load 60W. Status: **beta**.
 
 The load can be ordered from Chine (AliExpress, eBay etc), something like this one:
 
