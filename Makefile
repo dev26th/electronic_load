@@ -1,5 +1,5 @@
 MAIN=main.c
-SRC=system.c systemtimer.c strings.c flash.c uart.c displays.c button.c encoder.c encoderbutton.c beep.c fan.c load.c adc.c
+SRC=system.c systemtimer.c strings.c flash.c uart.c displays.c button.c encoder.c encoderbutton.c beep.c fan.c load.c adc.c ringbuffer.c
 RELS=$(SRC:.c=.rel)
 
 all: bin

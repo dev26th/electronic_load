@@ -7,6 +7,18 @@
 #include "stm8.h"
 #include "settings.h"
 #include "strings.h"
+#include "ringbuffer.h"
+
+enum RxState {
+    RxState_Start,
+    RxState_H,       // waiting for high byte half
+    RxState_L,       // waiting low byte half
+    RxState_Stop     // '\n' received, but buffer not read yet
+};
+static enum RxState rxState = RxState_Start;
+
+static uint8_t rxBuf[UART_RXBUF_SIZE];
+static uint8_t rxBufPos;
 
 void UART_write(const char *str) {
     for(; *str; ++str)
@@ -46,3 +58,79 @@ void UART_writeDecU32(uint32_t v) {
 
     UART_write(buf);
 }
+
+static inline void resetRx(void) {
+    rxBufPos = 0;
+    rxState  = RxState_Start;
+}
+
+const uint8_t* UART_getRx(uint8_t* size) {
+    if(rxState == RxState_Stop) {
+        *size = rxBufPos;
+        return rxBuf;
+    }
+    else {
+        return NULL;
+    }
+}
+
+void UART_rxDone(void) {
+    resetRx();
+}
+
+void UART_process(void) {
+    uint8_t v;
+    uint8_t b;
+    if(!RINGBUFFER_takeIfNotEmpty(&b)) return;
+
+    switch(rxState) {
+        case RxState_Start:
+            if(b == 'S') rxState = RxState_H; // start
+            break;
+
+        case RxState_H:
+        case RxState_L:
+            if(b >= '0' && b <= '9') {
+                v = b - '0';
+            }
+            else if(b >= 'A' && b <= 'F') {
+                v = b - 'A' + 10;
+            }
+            else if(b == '\n') { // ignore
+                break;
+            }
+            else if(b == '\r') { // stop
+                if(rxState == RxState_L)   // unexpected, reset
+                    resetRx();
+                else
+                    rxState = RxState_Stop;
+                break;
+            }
+            else {    // unexpected symbol, reset
+                resetRx();
+                break;
+            }
+
+            if(rxState == RxState_H) {
+                rxBuf[rxBufPos] = (v << 4);
+                rxState = RxState_L;
+            }
+            else {
+                rxBuf[rxBufPos] |= v;
+                rxState = RxState_H;
+                ++rxBufPos;
+                if(rxBufPos >= UART_RXBUF_SIZE) resetRx();
+            }
+
+            break;
+
+        case RxState_Stop:
+            break; // ignore all
+    }
+}
+
+void UART_UART2_rx(void) __interrupt(IRQN_UART2_RX) {
+    RINGBUFFER_addIfNotFull(UART2->DR);
+    UART2->SR = (uint8_t)~UART_SR_RXNE; // reset RXNE
+}
+

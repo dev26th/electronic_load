@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <string.h>
 
 #include "stm8.h"
 #include "settings.h"
@@ -90,6 +91,21 @@ struct Fun2State {
 };
 static struct Fun2State fun2State;
 
+struct ActualValues {
+    uint8_t  error;
+    uint8_t  mode;
+    uint8_t  submode;
+    int16_t  iSet;
+    int16_t  uCur;
+    int16_t  uSense;
+    int16_t  tempRaw;
+    int16_t  uSupRaw;
+    uint32_t ah;   // mAs
+    uint32_t wh;   // mWs
+};
+static struct ActualValues actualValues;
+static volatile bool actualValuesPinned;
+
 enum EncoderMode {
     EncoderMode_I1,
     EncoderMode_I0,
@@ -138,8 +154,17 @@ struct Config {
     int16_t          uSet;          // mV
     int16_t          iSet;          // mA
 };
-static_assert(sizeof(struct Config) <= 128, "Config is bigger as EEPROM");
+static_assert(sizeof(struct Config) <= 128, "Config is bigger than EEPROM");
 #define CFG ((struct Config*)0x4000) // begin of the EEPROM
+
+#define INPUT_DISABLE_BUTTON         0x01
+#define INPUT_DISABLE_ENCODER        0x02
+#define INPUT_DISABLE_ENCODER_BUTTON 0x04
+static bool displayOverride;
+static uint8_t display[8];
+static uint8_t inputDisable;
+static uint16_t flowInterval = 0xFFFF;
+static uint32_t lastFlow;
 
 // --------------------------------------------------------------------------------------------------------------------
 
@@ -307,6 +332,36 @@ static void startFun2(void) {
     fun2State.tick          = 0;
     fun2State.sAh           = 0;
     fun2State.sWh           = 0;
+}
+
+static void copyActualValues(void) {
+    if(actualValuesPinned) return;
+
+    actualValues.error   = error;
+    actualValues.mode    = mode;
+    actualValues.submode = 0;
+    actualValues.iSet    = iSet;
+    actualValues.uCur    = uCur;
+    actualValues.uSense  = uSense;
+    actualValues.tempRaw = tempRaw;
+    actualValues.uSupRaw = uSupRaw;
+    actualValues.ah      = 0;
+    actualValues.wh      = 0;
+
+    switch(mode) {
+        case Mode_Fun1Run:
+            break;
+
+        case Mode_Fun2Run:
+        case Mode_Fun2Stop:
+        case Mode_Fun2Res:
+            actualValues.submode |= fun2State.conn4;
+            actualValues.ah       = fun2State.ah;
+            actualValues.wh       = fun2State.wh;
+            break;
+    }
+
+    actualValuesPinned = true;
 }
 
 static void resetFun2(void) {
@@ -508,6 +563,8 @@ void SYSTEMTIMER_onTick(void) {
         case Mode_Fun2Stop: doFun2Stop();    break;
         case Mode_Fun2Res:                   break;
     }
+
+    copyActualValues();
     GPIOD->ODR &= ~GPIO_ODR_7;
 }
 
@@ -517,6 +574,7 @@ void SYSTEMTIMER_onTack(void) {
 
 void BUTTON_onRelease(bool longpress) {
     if(error) return;
+    if(inputDisable & INPUT_DISABLE_BUTTON) return;
 
     switch(mode) {
         case Mode_Booting:
@@ -580,6 +638,7 @@ static void updateValue(int16_t* v, int16_t d, uint16_t min, uint16_t max) {
 
 void ENCODER_onChange(int8_t d) {
     if(error) return;
+    if(inputDisable & INPUT_DISABLE_ENCODER) return;
 
     switch(mode) {
         case Mode_Booting:
@@ -619,6 +678,7 @@ void ENCODER_onChange(int8_t d) {
 
 void ENCODERBUTTON_onRelease(void) {
     if(error) return;
+    if(inputDisable & INPUT_DISABLE_ENCODER_BUTTON) return;
 
     switch(mode) {
         case Mode_Booting:
@@ -708,7 +768,17 @@ static void updateDisplays(void) {
 
     displayDashes(bufA);
 
-    if(error) {
+    if(displayOverride) {
+        bufB[0]  = display[0];
+        bufB[1]  = display[1];
+        bufB[2]  = display[2];
+        bufB[3]  = display[3];
+        bufA[0]  = display[4];
+        bufA[1]  = display[5];
+        bufA[2]  = display[6];
+        bufALeds = display[7];
+    }
+    else if(error) {
         bufB[0] = DISPLAYS_SYM_E;
         bufB[1] = DISPLAYS_SYM_r;
         bufB[2] = DISPLAYS_SYM_r;
@@ -738,14 +808,14 @@ static void updateDisplays(void) {
                     bufB[3] = (CFG->fun == 0) ? DISPLAYS_SYM_1 : DISPLAYS_SYM_2;
                 }
                 else {
-                    bufA[0] = 0xFF;
-                    bufA[1] = 0xFF;
-                    bufA[2] = 0xFF;
+                    bufA[0]  = 0xFF;
+                    bufA[1]  = 0xFF;
+                    bufA[2]  = 0xFF;
                     bufALeds = 0xFF;
-                    bufB[0] = 0xFF;
-                    bufB[1] = 0xFF;
-                    bufB[2] = 0xFF;
-                    bufB[3] = 0xFF;
+                    bufB[0]  = 0xFF;
+                    bufB[1]  = 0xFF;
+                    bufB[2]  = 0xFF;
+                    bufB[3]  = 0xFF;
                 }
                 break;
 
@@ -775,7 +845,7 @@ static void updateDisplays(void) {
                 displayInt(iSet, 0, bufA);
                 bufALeds = encoderStateToLeds() | LED_V;
                 if(fun1State.beepCount < (500 / SYSTEMTIMER_MS_PER_TICK)) bufA[3] |= LED_RUN;
-                displayInt(uCur/10, 1, bufB);
+                displayInt(actualValues.uCur/10, 1, bufB);
                 break;
 
             case Mode_Fun2Run:
@@ -799,12 +869,12 @@ static void updateDisplays(void) {
                             break;
 
                         case DisplayedValue_Ah:
-                            displayInt(fun2State.ah / 3600, 0, bufB);
+                            displayInt(actualValues.ah / 3600, 0, bufB);
                             bufALeds |= LED_AH;
                             break;
 
                         case DisplayedValue_Wh:
-                            displayInt(fun2State.wh / 3600, 0, bufB);
+                            displayInt(actualValues.wh / 3600, 0, bufB);
                             bufALeds |= LED_WH;
                             break;
                     }
@@ -910,6 +980,151 @@ static uint8_t crc8(uint8_t crc, uint8_t b) __naked {
      __endasm;
 }
 
+enum Command {
+    Command_ReadCal           = 0x01,
+    Command_WriteCal,
+    Command_Display,
+    Command_Beep,
+    Command_Fan,
+    Command_InputDisable,
+    Command_ReadSettings,
+    Command_WriteSettings,
+    Command_Go,
+    Command_GetState,
+    Command_StartFlow,
+    Command_StartBootloader,
+
+    Command_Flow              = 0x2B,
+    Command_Response          = 0x40,
+    Command_Error             = 0x80
+};
+
+static void sendUartCommand(uint8_t cmd, const uint8_t* data, uint8_t size) {
+    uint8_t crc;
+    UART_send('S');
+    crc = crc8(0, cmd);
+    UART_writeHexU8(cmd);
+
+    for(; size > 0; --size, ++data) {
+        crc = crc8(crc, *data);
+        UART_writeHexU8(*data);
+    }
+    UART_writeHexU8(crc);
+    UART_send('\r');
+    UART_send('\n');
+}
+
+static void commitUartCommand(uint8_t cmd) {
+    cmd |= (uint8_t)Command_Response;
+    sendUartCommand(cmd, NULL, 0);
+}
+
+static void processUartCommand(const uint8_t* buf, uint8_t size) {
+    static uint8_t reply[4];
+
+    switch(buf[0]) {
+        case Command_Display:
+            if(size == 10) {
+                displayOverride = buf[1];
+                memcpy(display, buf+2, sizeof(display));
+                commitUartCommand(buf[0]);
+            }
+            break;
+
+        case Command_Beep:
+            if(size == 3) {
+                BEEP_beep(buf[1], buf[2]);
+                commitUartCommand(buf[0]);
+            }
+            break;
+
+        case Command_Fan:
+            if(size == 2) {
+                if(buf[1] == 0xFF) {
+                    FAN_set(0);
+                    fanState = FanState_Off;
+                }
+                else {
+                    fanState = FanState_Override;
+                    FAN_set(buf[1]);
+                }
+                commitUartCommand(buf[0]);
+            }
+            break;
+
+        case Command_InputDisable:
+            if(size == 2) {
+                inputDisable = buf[1];
+                commitUartCommand(buf[0]);
+            }
+            break;
+
+        case Command_ReadSettings:
+            if(size == 1) {
+                reply[0] = (uint8_t)(uSet >> 8);
+                reply[1] = (uint8_t)uSet;
+                reply[2] = (uint8_t)(iSet >> 8);
+                reply[3] = (uint8_t)iSet;
+                sendUartCommand(Command_ReadSettings | Command_Response, reply, 4);
+            }
+            break;
+
+        case Command_WriteSettings:
+            if(size == 5) {
+                uSet = ((uint16_t)buf[1] << 8) | buf[2];
+                iSet = ((uint16_t)buf[3] << 8) | buf[4];
+                commitUartCommand(buf[0]);
+            }
+            break;
+
+        case Command_GetState:
+            if(size == 1) {
+                sendUartCommand(Command_GetState | Command_Response, (const uint8_t*)&actualValues, sizeof(actualValues));
+            }
+            break;
+
+        case Command_StartFlow:
+            if(size == 3) {
+                flowInterval = ((uint16_t)buf[1] << 8) | buf[2];
+                commitUartCommand(buf[0]);
+            }
+            break;
+
+        default:
+            UART_write("->");
+            for(; size > 0; --size, ++buf) UART_writeHexU8(*buf);
+    }
+    UART_write("cmd done\r\n");
+}
+
+static void processUartRx(void) {
+    uint8_t rxSize;
+    uint8_t n;
+    uint8_t crc;
+    const uint8_t* rx;
+    const uint8_t* p;
+
+    UART_process();
+    rx = UART_getRx(&rxSize);
+    if(!rx) return;
+
+    crc = 0;
+    for(p = rx, n = rxSize; n > 0; --n, ++p) crc = crc8(crc, *p);
+    if(crc == 0 && rxSize > 1)
+        processUartCommand(rx, rxSize-1);
+    else
+        UART_write("checksum mismatch\r\n");
+    UART_rxDone();
+}
+
+static void processFlow(void) {
+    if(flowInterval == 0xFFFF) return;
+    if(SYSTEMTIMER_ms - lastFlow < flowInterval) return;
+
+    sendUartCommand(Command_Flow, (const uint8_t*)&actualValues, sizeof(actualValues));
+    lastFlow = SYSTEMTIMER_ms;
+}
+
 // PD2, PD7
 static void initDebug(void) {
     GPIOD->DDR |= GPIO_DDR_2 | GPIO_DDR_7;  // output
@@ -940,10 +1155,13 @@ int main(void) {
         uint32_t lastDump   = SYSTEMTIMER_ms;
         uint32_t lastUpdate = SYSTEMTIMER_ms;
         while(1) {
+            processUartRx();
+            processFlow();
             if(SYSTEMTIMER_ms - lastUpdate >= 100) {
                 updateDisplays();
                 lastUpdate = SYSTEMTIMER_ms;
 
+                /*
                 if(SYSTEMTIMER_ms - lastDump >= 1000) {
                     UART_write("err=");
                     UART_writeHexU8(error);
@@ -971,7 +1189,9 @@ int main(void) {
 
                     lastDump = SYSTEMTIMER_ms;
                 }
+                */
             }
+            actualValuesPinned = false;
         }
     }
 }
