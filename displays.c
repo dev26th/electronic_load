@@ -157,6 +157,9 @@ static void sendBytes(uint8_t addr, uint8_t a, uint8_t b) {
 
 void DISPLAYS_init(void) {
     initI2c();
+}
+
+void DISPLAYS_start(void) {
     SYSTEMTIMER_waitMsOnStart(50); // let the TM1650s time to start
     sendBytes(0x48, 0x11, 0x11); // min brightness; dot; on
 }

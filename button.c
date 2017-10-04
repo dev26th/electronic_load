@@ -6,38 +6,55 @@
 #define BUTTON_BOUNCE_TIME_MS 20
 #define BUTTON_LONG_TIME_MS 1000
 
-struct ButtonState {
-    volatile bool pressed;
-    volatile bool pressProcessed;
-    volatile uint32_t lastCheck;
-    volatile uint32_t pressTime;
-};
-static struct ButtonState buttonState;
+static volatile bool longPress;
+static volatile bool pending;
+static volatile bool pressed;
+static volatile bool pressProcessed;
+static volatile uint32_t lastCheck;
+static volatile uint32_t pressTime;
 
 void BUTTON_init(void) {
     GPIOC->CR1 |= GPIO_CR1_4;  // pull-up
 }
 
-void BUTTON_process(void) {
-    bool pressed;
+// ~3.8 us
+void BUTTON_cycle(void) {
+    bool p;
 
-    if(SYSTEMTIMER_ms - buttonState.lastCheck < BUTTON_BOUNCE_TIME_MS) return;
+    if(pending) return;
+    if((SYSTEMTIMER_ms - lastCheck) < BUTTON_BOUNCE_TIME_MS) return;
 
-    pressed = BUTTON_isPressed();
-    if(pressed && buttonState.pressed && (SYSTEMTIMER_ms - buttonState.pressTime) >= BUTTON_LONG_TIME_MS) {
-        if(!buttonState.pressProcessed) {
-            BUTTON_onRelease(true);
-            buttonState.pressProcessed = true;
+    p = BUTTON_isPressed();
+    if(p && pressed && (SYSTEMTIMER_ms - pressTime) >= BUTTON_LONG_TIME_MS) {
+        if(!pressProcessed) {
+            longPress = true;
+            pending = true;
+            pressProcessed = true;
         }
     }
-    else if(pressed != buttonState.pressed) {
-        if(pressed)
-            buttonState.pressTime = SYSTEMTIMER_ms;
-        else if(!buttonState.pressProcessed)
-            BUTTON_onRelease(false);
-        buttonState.pressed = pressed;
-        buttonState.lastCheck = SYSTEMTIMER_ms;
-        buttonState.pressProcessed = false;
+    else if(p != pressed) {
+        if(p) {
+            pressTime = SYSTEMTIMER_ms;
+        }
+        else if(!pressProcessed) {
+            longPress = false;
+            pending = true;
+        }
+        pressed = p;
+        lastCheck = SYSTEMTIMER_ms;
+        pressProcessed = false;
     }
+}
+
+void BUTTON_process(void) {
+    int8_t l;
+    if(!pending) return;
+
+    disable_irq();
+    l = longPress;
+    pending = false;
+    enable_irq();
+
+    BUTTON_onRelease(l);
 }
 

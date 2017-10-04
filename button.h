@@ -7,6 +7,7 @@
 
 void BUTTON_onRelease(bool longpress);
 void BUTTON_init(void);
+void BUTTON_cycle(void);
 void BUTTON_process(void);
 inline bool BUTTON_isPressed(void) { return !(GPIOC->IDR & GPIO_IDR_4); }
 

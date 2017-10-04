@@ -19,16 +19,15 @@ void ADC_startScanCont(uint8_t n) {
     res[3] = 0;
 
     ADC1->CR3 &= ~ADC1_CR3_OVR;
-    ADC1->CSR  = ADC1_CSR_EOCIE | 4;
+    ADC1->CSR  = ADC1_CSR_EOCIE | 3;
     ADC1->CR1 |= ADC1_CR1_CONT;
     ADC1->CR3 |= ADC1_CR3_DBUF;
     ADC1->CR2 |= ADC1_CR2_SCAN;
     ADC1->CR1 |= ADC1_CR1_ADON;
 }
 
-// FIXME takes ~30% CPU
 void ADC_ADC1_eoc(void) __interrupt(IRQN_ADC1_EOC) {
-    ADC1->CSR = ADC1_CSR_EOCIE | 4;
+    ADC1->CSR = ADC1_CSR_EOCIE | 3;
 
     res[0] += ADC1->DB[0].L | (((uint16_t)ADC1->DB[0].H) << 8);
     res[1] += ADC1->DB[1].L | (((uint16_t)ADC1->DB[1].H) << 8);

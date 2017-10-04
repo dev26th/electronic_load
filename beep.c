@@ -33,6 +33,7 @@ void BEEP_init(void) {
     BEEP->CSR = BEEP_CALIBRATION;
 }
 
+// ~250ns (sound off)
 void BEEP_process(void) {
     if(duration && (SYSTEMTIMER_ms - start > duration)) {
         duration = 0;

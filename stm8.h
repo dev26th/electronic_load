@@ -14,8 +14,8 @@
 #define _WO                 volatile           // write-only register
 #define _RS                                    // unused (reserved) space in registers address range
 
-#define rim()               do { __asm__ ("rim");  } while (0) // enable interrupts
-#define sim()               do { __asm__ ("sim");  } while (0) // disable interrupts
+#define enable_irq()        do { __asm__ ("rim");  } while (0) // enable interrupts
+#define disable_irq()       do { __asm__ ("sim");  } while (0) // disable interrupts
 #define nop()               do { __asm__ ("nop");  } while (0) // no operation
 #define trap()              do { __asm__ ("trap"); } while (0) // trap (soft interrupt)
 #define wfi()               do { __asm__ ("wfi");  } while (0) // wait for interrupt
@@ -137,12 +137,32 @@ typedef struct {
 static_assert(offsetof(EXTI_t, CR2) == 0x01, "Wrong definition");
 
 #define EXTI_CR1_PDIS                      (0x03 << 6) // Port D external interrupt sensitivity bits
+#define EXTI_CR1_PDIS_FALLING_LOW          (0x00 << 6) //   - Falling edge and low level
+#define EXTI_CR1_PDIS_RISING               (0x01 << 6) //   - Rising edge only
+#define EXTI_CR1_PDIS_FALLING              (0x02 << 6) //   - Falling edge only
+#define EXTI_CR1_PDIS_RISING_FALLING       (0x03 << 6) //   - Rising and falling edge
 #define EXTI_CR1_PCIS                      (0x03 << 4) // Port C external interrupt sensitivity bits
+#define EXTI_CR1_PCIS_FALLING_LOW          (0x00 << 4) //   - Falling edge and low level
+#define EXTI_CR1_PCIS_RISING               (0x01 << 4) //   - Rising edge only
+#define EXTI_CR1_PCIS_FALLING              (0x02 << 4) //   - Falling edge only
+#define EXTI_CR1_PCIS_RISING_FALLING       (0x03 << 4) //   - Rising and falling edge
 #define EXTI_CR1_PBIS                      (0x03 << 2) // Port B external interrupt sensitivity bits
+#define EXTI_CR1_PBIS_FALLING_LOW          (0x00 << 2) //   - Falling edge and low level
+#define EXTI_CR1_PBIS_RISING               (0x01 << 2) //   - Rising edge only
+#define EXTI_CR1_PBIS_FALLING              (0x02 << 2) //   - Falling edge only
+#define EXTI_CR1_PBIS_RISING_FALLING       (0x03 << 2) //   - Rising and falling edge
 #define EXTI_CR1_PAIS                      (0x03 << 0) // Port A external interrupt sensitivity bits
+#define EXTI_CR1_PAIS_FALLING_LOW          (0x00 << 0) //   - Falling edge and low level
+#define EXTI_CR1_PAIS_RISING               (0x01 << 0) //   - Rising edge only
+#define EXTI_CR1_PAIS_FALLING              (0x02 << 0) //   - Falling edge only
+#define EXTI_CR1_PAIS_RISING_FALLING       (0x03 << 0) //   - Rising and falling edge
 
 #define EXTI_CR2_TLIS                      (   1 << 2) // Top level interrupt sensitivity
 #define EXTI_CR2_PEIS                      (0x03 << 0) // Port E external interrupt sensitivity bits
+#define EXTI_CR1_PEIS_FALLING_LOW          (0x00 << 0) //   - Falling edge and low level
+#define EXTI_CR1_PEIS_RISING               (0x01 << 0) //   - Rising edge only
+#define EXTI_CR1_PEIS_FALLING              (0x02 << 0) //   - Falling edge only
+#define EXTI_CR1_PEIS_RISING_FALLING       (0x03 << 0) //   - Rising and falling edge
 
 // == RST =============================================================================================================
 

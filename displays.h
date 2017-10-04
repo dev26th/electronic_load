@@ -35,7 +35,7 @@
 extern const uint8_t DISPLAYS_DIGITS[];
 
 void DISPLAYS_init(void);
-
+void DISPLAYS_start(void);
 void DISPLAYS_display(const uint8_t* a, const uint8_t* b);
 
 #endif // _DISPLAYS_H_

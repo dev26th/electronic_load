@@ -5,49 +5,27 @@
 #include "stm8.h"
 #include "systemtimer.h"
 
-#define ENCODER_BOUNCE_TIME_MS 4
-
-struct EncoderState {
-    volatile uint8_t idr;
-    volatile uint32_t lastCheck;
-};
-static struct EncoderState encoderState;
+static int8_t encoderValue;
 
 void ENCODER_init(void) {
     GPIOB->CR1 |= GPIO_CR1_5 | GPIO_CR1_4;  // pull-up
+    GPIOB->CR2 |= GPIO_CR2_4; // interrupt
 
-    encoderState.idr = GPIOB->IDR;
+    EXTI->CR1 |= EXTI_CR1_PBIS_FALLING;
 }
 
 void ENCODER_process(void) {
-    uint8_t idr;
+    int8_t value;
+    disable_irq();
+    value = encoderValue;
+    encoderValue = 0;
+    enable_irq();
 
-    //if(SYSTEMTIMER_ms - encoderState.lastCheck < ENCODER_BOUNCE_TIME_MS) return;
+    if(value != 0)
+        ENCODER_onChange(value);
+}
 
-    idr = GPIOB->IDR;
-    if(idr != encoderState.idr) {
-        bool   a  = (idr & GPIO_IDR_5);
-        bool   b  = (idr & GPIO_IDR_4);
-        bool   a0 = (encoderState.idr & GPIO_IDR_5);
-        bool   b0 = (encoderState.idr & GPIO_IDR_4);
-        int8_t d;
-
-        if(b) {
-                if(a0) d = -1;
-                else   d = +1;
-        }
-        else if(a && !b) {
-                if(!b0) d = -1;
-                else    d = +1;
-        }
-        else {
-                if(!b0) d = +1;
-                else    d = -1;
-        }
-
-        if(a && b) ENCODER_onChange(d);
-        encoderState.idr = idr;
-        encoderState.lastCheck = SYSTEMTIMER_ms;
-    }
+void ENCODERBUTTON_exti(void) __interrupt(IRQN_EXTI1) {
+    encoderValue += (GPIOB->IDR & GPIO_IDR_5) ? 1 : -1;
 }
 

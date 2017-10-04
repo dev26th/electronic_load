@@ -5,6 +5,7 @@
 
 void ENCODERBUTTON_init(void);
 void ENCODERBUTTON_onRelease(void);
+void ENCODERBUTTON_cycle(void);
 void ENCODERBUTTON_process(void);
 
 #endif // _ENCODERBUTTON_H_

@@ -2,7 +2,6 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
 
 #include "stm8.h"
 #include "settings.h"
@@ -19,6 +18,7 @@ static enum RxState rxState = RxState_Start;
 
 static uint8_t rxBuf[UART_RXBUF_SIZE];
 static uint8_t rxBufPos;
+static bool hasChecksum;
 
 void UART_write(const char *str) {
     for(; *str; ++str)
@@ -74,6 +74,10 @@ const uint8_t* UART_getRx(uint8_t* size) {
     }
 }
 
+bool UART_hasChecksum(void) {
+    return hasChecksum;
+}
+
 void UART_rxDone(void) {
     resetRx();
 }
@@ -85,7 +89,15 @@ void UART_process(void) {
 
     switch(rxState) {
         case RxState_Start:
-            if(b == 'S') rxState = RxState_H; // start
+            if(b == 'S') {            // start with checksum
+                rxState = RxState_H;
+                hasChecksum = true;
+            }
+            else if(b == 's') {       // start, no checksum
+                rxState = RxState_H;
+                hasChecksum = false;
+            }
+
             break;
 
         case RxState_H:
@@ -125,6 +137,7 @@ void UART_process(void) {
             break;
 
         case RxState_Stop:
+            nop();  // who are the EVELYN and the DOG?
             break; // ignore all
     }
 }

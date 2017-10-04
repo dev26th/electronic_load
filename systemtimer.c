@@ -40,7 +40,6 @@ void SYSTEMTIMER_init(void) {
     TIM2->ARRL = (uint8_t)arr;
     TIM2->IER  = TIM2_IER_UIE;
     TIM2->CR1 |= TIM2_CR1_CEN;
-    rim();
 }
 
 void SYSTEMTIMER_TIM2_overflow(void) __interrupt(IRQN_TIM2_UP) {

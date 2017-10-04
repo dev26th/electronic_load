@@ -36,8 +36,9 @@ enum Mode {
     Mode_Fun1,
     Mode_Fun1Run,
     Mode_Fun2,
+    Mode_Fun2Pre,
     Mode_Fun2Run,
-    Mode_Fun2Stop,
+    Mode_Fun2Warn,
     Mode_Fun2Res,
 };
 static enum Mode mode;
@@ -49,15 +50,23 @@ static enum Mode mode;
 #define ERROR_ERT      (1 << 4)
 static uint8_t  error;
 
+static volatile uint16_t uCurRaw;
+static volatile uint16_t uSenseRaw;
+static volatile uint16_t uSupRaw;
+static volatile uint16_t tempRaw;
+
 static int16_t  uSet;            // mV
 static int16_t  iSet;            // mA
 static int32_t  powLimit;        // uW
-static uint16_t uCurRaw;
 static int16_t  uCur;            // mV
-static uint16_t uSenseRaw;
 static int16_t  uSense;          // mV
-static uint16_t uSupRaw;
-static uint16_t tempRaw;
+static uint32_t cycleBeginMs;
+
+static volatile bool     conn4;
+static volatile uint16_t sCount;
+static          uint16_t sCountCopy;
+static volatile uint32_t sSum;
+static          uint32_t sSumCopy;
 
 struct MenuState {
     int8_t fun;
@@ -66,8 +75,9 @@ struct MenuState {
 static struct MenuState menuState;
 
 struct Fun1State {
-    uint16_t runCount;
-    uint16_t beepCount;
+    bool     warning;
+    bool     flip;
+    uint32_t lastBeep;
 };
 static struct Fun1State fun1State;
 
@@ -77,34 +87,17 @@ enum DisplayedValue {
     DisplayedValue_Wh
 };
 struct Fun2State {
-    bool     conn4;
-    uint8_t  dispConnCount;
     enum DisplayedValue disp;
-    uint16_t dispCount;
+    uint32_t lastDisp;
     int16_t  u;
-    uint32_t ah;   // mAs
-    uint32_t wh;   // mWs
-    uint16_t tick;
-    uint32_t sAh;
-    uint32_t sWh;
-    uint16_t beepCount;
+    uint32_t ah;       // 1 unit = 1 mA*h
+    uint64_t sAh;      // 1 unit = 2 mA*ms
+    uint32_t wh;       // 1 unit = 1 mW*h
+    uint64_t sWh;      // 1 unit = 4 uW*ms, raw
+    bool     flip;
+    uint32_t lastBeep;
 };
 static struct Fun2State fun2State;
-
-struct ActualValues {
-    uint8_t  error;
-    uint8_t  mode;
-    uint8_t  submode;
-    int16_t  iSet;
-    int16_t  uCur;
-    int16_t  uSense;
-    int16_t  tempRaw;
-    int16_t  uSupRaw;
-    uint32_t ah;   // mAs
-    uint32_t wh;   // mWs
-};
-static struct ActualValues actualValues;
-static volatile bool actualValuesPinned;
 
 enum EncoderMode {
     EncoderMode_I1,
@@ -165,6 +158,36 @@ static uint8_t display[8];
 static uint8_t inputDisable;
 static uint16_t flowInterval = 0xFFFF;
 static uint32_t lastFlow;
+
+// --------------------------------------------------------------------------------------------------------------------
+// this functions are called in interrupt context
+
+// ~13 us
+void SYSTEMTIMER_onTick(void) {
+    GPIOD->ODR |= GPIO_ODR_7;
+    BEEP_process();
+    ENCODERBUTTON_cycle();
+    BUTTON_cycle();
+
+    ++sCount;
+    sSum += (conn4 ? uSense : uCur);
+
+    GPIOD->ODR &= ~GPIO_ODR_7;
+}
+
+// ADC-cycle duration: ~515 us from start until return from onResult
+void SYSTEMTIMER_onTack(void) {
+    ADC_startScanCont(16);
+}
+
+// ~7 us
+void ADC_onResult(const uint16_t* res) {
+    // with small quasi-FIR-filter
+    tempRaw   = (tempRaw   + 1) / 2 + res[0];
+    uCurRaw   = (uCurRaw   + 1) / 2 + res[1];
+    uSenseRaw = (uSenseRaw + 1) / 2 + res[2];
+    uSupRaw   = (uSupRaw   + 1) / 2 + res[3];  // FIXME actually, we need this value only durung startup. Optimize?
+}
 
 // --------------------------------------------------------------------------------------------------------------------
 
@@ -232,20 +255,18 @@ static void stopBooting(void) {
 }
 
 static void doBooting(void) {
-    if(SYSTEMTIMER_ms >= 500) {
+    if(cycleBeginMs >= 500) {
         if(uSupRaw < CFG->uSupMin) { // cannot be reset
             error |= ERROR_SUPPLY;
         }
     }
 
-    if(SYSTEMTIMER_ms >= 2000) {
+    if(cycleBeginMs >= 2000) {
         stopBooting();
     }
 }
 
-static void updateConfig() {
-    // FIXME
-    /*
+static void saveSettings() {
     if(iSet != CFG->iSet || uSet != CFG->uSet) {
         FLASH_unlockOpt();
 
@@ -255,18 +276,28 @@ static void updateConfig() {
         FLASH_waitOpt();
         FLASH_lockOpt();
     }
-    */
+}
+
+static void copyActualValues(void) {
+    // FIXME use optimistic lock to avoid sim?
+    disable_irq();
+    sCountCopy = sCount;
+    sSumCopy   = sSum;
+    sCount = 0;
+    sSum   = 0;
+    enable_irq();
 }
 
 static void startFun1(void) {
-    updateConfig();
+    saveSettings();
     mode = Mode_Fun1Run;
     if(encoderMode == EncoderMode_U1 || encoderMode == EncoderMode_U0)
         encoderMode = EncoderMode_I0;
     updateISet();
     LOAD_start();
-    fun1State.runCount  = 0;
-    fun1State.beepCount = 0;
+    fun1State.warning  = false;
+    fun1State.flip     = false;
+    fun1State.lastBeep = 0;
 }
 
 static void stopFun1(void) {
@@ -280,93 +311,51 @@ static void doFun1(void) {
         return;
     }
 
-    if(!LOAD_isStable()) {
-        stopFun1();
-        return;
-    }
-
     if((int32_t)uCur * iSet >= powLimit) {
         iSet = (powLimit / uCur / 10) * 10;
         updateISet();
     }
 
-    if(fun1State.runCount < (500 / SYSTEMTIMER_MS_PER_TICK)) {
-        ++fun1State.runCount;
-        return;
-    }
-
-    if(uCur < uSet) {
-        if(!fun1State.beepCount)
-            fun1State.beepCount = 1; // start
+    if((uCur < uSet) || !LOAD_isStable()) {
+        if((!fun1State.warning) || (cycleBeginMs - fun1State.lastBeep >= 500)) {
+            BEEP_beep(BEEP_freq_1k, 52);
+            fun1State.warning  = true;
+            fun1State.flip     = !fun1State.flip;
+            fun1State.lastBeep = cycleBeginMs;
+        }
     }
     else {
-        fun1State.beepCount = 0; // stop
-    }
-
-    if(fun1State.beepCount) {
-        ++fun1State.beepCount;
-        if(fun1State.beepCount == (1000 / SYSTEMTIMER_MS_PER_TICK)) {
-            fun1State.beepCount = 1;        // reload
-        }
-        else if(fun1State.beepCount < (500 / SYSTEMTIMER_MS_PER_TICK)) { // on
-            BEEP_beep(BEEP_freq_1k, 100);
-        }
-        else {                              // off
-            BEEP_beep(BEEP_freq_None, 100);
-        }
+        fun1State.warning  = false;
+        fun1State.flip     = false;
+        fun1State.lastBeep = 0;
     }
 }
 
 static void startFun2(void) {
-    updateConfig();
-    mode = Mode_Fun2Run;
+    saveSettings();
+    mode = Mode_Fun2Pre;
     if(encoderMode == EncoderMode_U1 || encoderMode == EncoderMode_U0)
         encoderMode = EncoderMode_I0;
     updateISet();
-    LOAD_start();
-    fun2State.conn4         = (uSense > CFG->uSenseMin);
-    fun2State.dispConnCount = (SYSTEMTIMER_TICKS_PER_S / 2);
-    fun2State.disp          = DisplayedValue_V;
-    fun2State.dispCount     = 0;
-    fun2State.u             = 0;
-    fun2State.tick          = 0;
-    fun2State.sAh           = 0;
-    fun2State.sWh           = 0;
+    conn4 = (uSense > CFG->uSenseMin);
+    fun2State.lastDisp = cycleBeginMs;
 }
 
-static void copyActualValues(void) {
-    if(actualValuesPinned) return;
+static void startFun2Run(void) {
+    mode = Mode_Fun2Run;
+    LOAD_start();
+    fun2State.disp     = DisplayedValue_V;
+    fun2State.lastDisp = cycleBeginMs;
 
-    actualValues.error   = error;
-    actualValues.mode    = mode;
-    actualValues.submode = 0;
-    actualValues.iSet    = iSet;
-    actualValues.uCur    = uCur;
-    actualValues.uSense  = uSense;
-    actualValues.tempRaw = tempRaw;
-    actualValues.uSupRaw = uSupRaw;
-    actualValues.ah      = 0;
-    actualValues.wh      = 0;
-
-    switch(mode) {
-        case Mode_Fun1Run:
-            break;
-
-        case Mode_Fun2Run:
-        case Mode_Fun2Stop:
-        case Mode_Fun2Res:
-            actualValues.submode |= fun2State.conn4;
-            actualValues.ah       = fun2State.ah;
-            actualValues.wh       = fun2State.wh;
-            break;
-    }
-
-    actualValuesPinned = true;
+    fun2State.u = 0;
+    copyActualValues();
 }
 
 static void resetFun2(void) {
-    fun2State.ah = 0;
-    fun2State.wh = 0;
+    fun2State.ah  = 0;
+    fun2State.sAh = 0;
+    fun2State.wh  = 0;
+    fun2State.sWh = 0;
 }
 
 static void stopFun2(void) {
@@ -374,10 +363,11 @@ static void stopFun2(void) {
     LOAD_stop();
 }
 
-static void startFun2Stop(void) {
-    mode = Mode_Fun2Stop;
+static void startFun2Warn(void) {
+    mode = Mode_Fun2Warn;
     LOAD_stop();
-    fun2State.beepCount = 1;
+    fun2State.flip     = false;
+    fun2State.lastBeep = cycleBeginMs;
 }
 
 static void startFun2Res(void) {
@@ -390,21 +380,27 @@ static void stopFun2Res(void) {
     mode = Mode_Fun2;
 }
 
+static void doFun2Pre(void) {
+    if(error) {
+        stopFun2();
+        return;
+    }
+
+    if(cycleBeginMs - fun2State.lastDisp >= 500) {
+        startFun2Run();
+    }
+}
+
 static void doFun2(void) {
     if(error) {
         stopFun2();
         return;
     }
 
-    fun2State.u = (fun2State.conn4 ? uSense : uCur);
+    fun2State.u = (conn4 ? uSense : uCur);
 
-    if(fun2State.u < uSet) {
-        startFun2Stop();
-        return;
-    }
-
-    if(!LOAD_isStable()) {
-        startFun2Stop();
+    if((fun2State.u < uSet) || !LOAD_isStable()) {
+        startFun2Warn();
         return;
     }
 
@@ -413,41 +409,31 @@ static void doFun2(void) {
         updateISet();
     }
 
-    fun2State.sAh += (uint32_t)iSet;
-    fun2State.sWh += (uint32_t)iSet * fun2State.u / 64;
-    ++fun2State.tick;
-    if(fun2State.tick == SYSTEMTIMER_TICKS_PER_S) {
-        fun2State.ah += fun2State.sAh / SYSTEMTIMER_TICKS_PER_S;
-        fun2State.wh += fun2State.sWh / (1000ul * SYSTEMTIMER_TICKS_PER_S / 64);
+    if(cycleBeginMs - fun2State.lastDisp >= 2500) {
+        fun2State.disp     = (enum DisplayedValue)(((uint8_t)fun2State.disp + 1) % 3);
+        fun2State.lastDisp = cycleBeginMs;
+    }
 
-        fun2State.tick = 0;
-        fun2State.sAh  = 0;
-        fun2State.sWh  = 0;
+    copyActualValues();
+    {
+        fun2State.sAh   += sCountCopy * iSet;
+        fun2State.ah     = fun2State.sAh / (3600ul * 1000 / 2);
+        fun2State.sWh   += sSumCopy * sCountCopy * iSet;
+        fun2State.wh     = fun2State.sWh / (3600ul * 1000 * 1000 / 4);
+        // FIXME convert wh from raw
 
         if(fun2State.ah > CFG->ahMax || fun2State.wh > CFG->whMax) {
-            startFun2Stop();
+            startFun2Warn();
             return;
-        }
-    }
-
-    if(fun2State.dispConnCount) {
-        --fun2State.dispConnCount;
-    }
-    else {
-        ++fun2State.dispCount;
-        if(fun2State.dispCount == (SYSTEMTIMER_TICKS_PER_S * 25 / 10)) {
-            fun2State.dispCount = 0;
-            fun2State.disp = (enum DisplayedValue)(((uint8_t)fun2State.disp + 1) % 3);
         }
     }
 }
 
-static void doFun2Stop(void) {
-    fun2State.dispConnCount = 0;
-    ++fun2State.beepCount;
-    if(fun2State.beepCount == (200 / SYSTEMTIMER_MS_PER_TICK)) {
-        fun2State.beepCount = 0;        // reload
-        BEEP_beep(BEEP_freq_1k, 100);
+static void doFun2Warn(void) {
+    if(cycleBeginMs - fun2State.lastBeep >= 100) {
+        BEEP_beep(BEEP_freq_1k, 40);
+        fun2State.flip     = !fun2State.flip;
+        fun2State.lastBeep = cycleBeginMs;
     }
 }
 
@@ -463,15 +449,9 @@ static inline void beepEncoderButton(void) {
     if(CFG->beepOn) BEEP_beep(BEEP_freq_1k, 10);
 }
 
-void ADC_onResult(const uint16_t* res) {
-    // with small quasi-FIR-filter
-    tempRaw   = (tempRaw   + 1) / 2 + res[0];
-    uCurRaw   = (uCurRaw   + 1) / 2 + res[1];
-    uSenseRaw = (uSenseRaw + 1) / 2 + res[2];
-    uSupRaw   = (uSupRaw   + 1) / 2 + res[3];
-}
-
 static inline void checkErrors(void) {
+    uint16_t temp = tempRaw;
+
     if(uCur < CFG->uNegative || uSense < CFG->uNegative) {
         error |= ERROR_POLARITY;
     }
@@ -486,11 +466,11 @@ static inline void checkErrors(void) {
         error &= ~ERROR_OUP;
     }
 
-    if(tempRaw >= CFG->tempDefect) {
+    if(temp >= CFG->tempDefect) {
         error |= ERROR_ERT;
     }
 
-    if(tempRaw <= CFG->tempLimit) {
+    if(temp <= CFG->tempLimit) {
         error |= ERROR_OTP;
     }
     else {
@@ -499,77 +479,47 @@ static inline void checkErrors(void) {
 }
 
 static inline void controlFan(void) {
+    uint16_t temp = tempRaw;
     switch(fanState) {
         case FanState_Override:
             break;
 
         case FanState_Off:
-            if(tempRaw < CFG->tempFanLow) {
+            if(temp < CFG->tempFanLow) {
                 fanState = FanState_Low;
                 FAN_set(33);
             }
             break;
 
         case FanState_Low:
-            if(tempRaw < CFG->tempFanMid) {
+            if(temp < CFG->tempFanMid) {
                 fanState = FanState_Mid;
                 FAN_set(66);
             }
-            if(tempRaw >= CFG->tempFanLow + CFG->tempThreshold) {
+            if(temp >= CFG->tempFanLow + CFG->tempThreshold) {
                 fanState = FanState_Off;
                 FAN_set(0);
             }
             break;
 
         case FanState_Mid:
-            if(tempRaw < CFG->tempFanFull) {
+            if(temp < CFG->tempFanFull) {
                 fanState = FanState_Full;
                 FAN_set(100);
             }
-            if(tempRaw >= CFG->tempFanMid + CFG->tempThreshold) {
+            if(temp >= CFG->tempFanMid + CFG->tempThreshold) {
                 fanState = FanState_Low;
                 FAN_set(33);
             }
             break;
 
         case FanState_Full:
-            if(tempRaw >= CFG->tempFanFull + CFG->tempThreshold) {
+            if(temp >= CFG->tempFanFull + CFG->tempThreshold) {
                 fanState = FanState_Mid;
                 FAN_set(66);
             }
             break;
     }
-}
-
-void SYSTEMTIMER_onTick(void) {
-    GPIOD->ODR |= GPIO_ODR_7;
-    BEEP_process();
-    ENCODER_process();
-    ENCODERBUTTON_process();
-    BUTTON_process();
-
-    recalcValues();
-    checkErrors();
-    controlFan();
-
-    switch(mode) {
-        case Mode_Booting:  doBooting();     break;
-        case Mode_MenuFun:                   break;
-        case Mode_MenuBeep:                  break;
-        case Mode_Fun1:                      break;
-        case Mode_Fun1Run:  doFun1();        break;
-        case Mode_Fun2:                      break;
-        case Mode_Fun2Run:  doFun2();        break;
-        case Mode_Fun2Stop: doFun2Stop();    break;
-        case Mode_Fun2Res:                   break;
-    }
-
-    copyActualValues();
-    GPIOD->ODR &= ~GPIO_ODR_7;
-}
-
-void SYSTEMTIMER_onTack(void) {
-    ADC_startScanCont(16);
 }
 
 void BUTTON_onRelease(bool longpress) {
@@ -609,7 +559,7 @@ void BUTTON_onRelease(bool longpress) {
             beepButton();
             break;
 
-        case Mode_Fun2Stop:
+        case Mode_Fun2Warn:
             startFun2Res();
             beepButton();
             break;
@@ -667,7 +617,7 @@ void ENCODER_onChange(int8_t d) {
             updateISet();
             break;
 
-        case Mode_Fun2Stop:
+        case Mode_Fun2Warn:
             break;
 
         case Mode_Fun2Res:
@@ -710,7 +660,7 @@ void ENCODERBUTTON_onRelease(void) {
             beepEncoderButton();
             break;
 
-        case Mode_Fun2Stop:
+        case Mode_Fun2Warn:
             startFun2Res();
             beepEncoderButton();
             break;
@@ -801,7 +751,7 @@ static void updateDisplays(void) {
     else {
         switch(mode) {
             case Mode_Booting:
-                if(SYSTEMTIMER_ms >= 1500) {
+                if(cycleBeginMs >= 1500) {
                     bufB[0] = DISPLAYS_SYM_F;
                     bufB[1] = DISPLAYS_SYM_u;
                     bufB[2] = DISPLAYS_SYM_n;
@@ -844,45 +794,44 @@ static void updateDisplays(void) {
             case Mode_Fun1Run:
                 displayInt(iSet, 0, bufA);
                 bufALeds = encoderStateToLeds() | LED_V;
-                if(fun1State.beepCount < (500 / SYSTEMTIMER_MS_PER_TICK)) bufA[3] |= LED_RUN;
-                displayInt(actualValues.uCur/10, 1, bufB);
+                if(!fun1State.flip) bufALeds |= LED_RUN;
+                displayInt(uCur/10, 1, bufB);
+                break;
+
+            case Mode_Fun2Pre:
+                bufB[0] = DISPLAYS_SYM_J;
+                bufB[1] = DISPLAYS_SYM_5;
+                bufB[2] = DISPLAYS_SYM_DASH;
+                bufB[3] = conn4 ? DISPLAYS_SYM_4 : DISPLAYS_SYM_2;
                 break;
 
             case Mode_Fun2Run:
                 bufALeds = LED_RUN;
-                // continue
+                // fallthrough
 
             case Mode_Fun2Res:
                 displayInt(iSet, 0, bufA);
                 bufALeds |= encoderStateToLeds();
-                if(fun2State.dispConnCount) {
-                    bufB[0] = DISPLAYS_SYM_J;
-                    bufB[1] = DISPLAYS_SYM_5;
-                    bufB[2] = DISPLAYS_SYM_DASH;
-                    bufB[3] = fun2State.conn4 ? DISPLAYS_SYM_4 : DISPLAYS_SYM_2;
-                }
-                else {
-                    switch(fun2State.disp) {
-                        case DisplayedValue_V:
-                            displayInt(fun2State.u/10, 1, bufB);
-                            bufALeds |= LED_V;
-                            break;
+                switch(fun2State.disp) {
+                    case DisplayedValue_V:
+                        displayInt(fun2State.u/10, 1, bufB);
+                        bufALeds |= LED_V;
+                        break;
 
-                        case DisplayedValue_Ah:
-                            displayInt(actualValues.ah / 3600, 0, bufB);
-                            bufALeds |= LED_AH;
-                            break;
+                    case DisplayedValue_Ah:
+                        displayInt(fun2State.ah, 0, bufB);
+                        bufALeds |= LED_AH;
+                        break;
 
-                        case DisplayedValue_Wh:
-                            displayInt(actualValues.wh / 3600, 0, bufB);
-                            bufALeds |= LED_WH;
-                            break;
-                    }
+                    case DisplayedValue_Wh:
+                        displayInt(fun2State.wh, 0, bufB);
+                        bufALeds |= LED_WH;
+                        break;
                 }
                 break;
 
-            case Mode_Fun2Stop:
-                if(fun2State.beepCount > (100 / SYSTEMTIMER_MS_PER_TICK)) {
+            case Mode_Fun2Warn:
+                if(!fun2State.flip) {
                     displayInt(fun2State.u/10, 1, bufB);
                     bufALeds |= LED_V;
                 }
@@ -1079,7 +1028,7 @@ static void processUartCommand(const uint8_t* buf, uint8_t size) {
 
         case Command_GetState:
             if(size == 1) {
-                sendUartCommand(Command_GetState | Command_Response, (const uint8_t*)&actualValues, sizeof(actualValues));
+                // FIXME sendUartCommand(Command_GetState | Command_Response, (const uint8_t*)&actualValues, sizeof(actualValues));
             }
             break;
 
@@ -1109,7 +1058,10 @@ static void processUartRx(void) {
     if(!rx) return;
 
     crc = 0;
-    for(p = rx, n = rxSize; n > 0; --n, ++p) crc = crc8(crc, *p);
+    if(UART_hasChecksum()) {
+        for(p = rx, n = rxSize; n > 0; --n, ++p) crc = crc8(crc, *p);
+    }
+
     if(crc == 0 && rxSize > 1)
         processUartCommand(rx, rxSize-1);
     else
@@ -1119,16 +1071,17 @@ static void processUartRx(void) {
 
 static void processFlow(void) {
     if(flowInterval == 0xFFFF) return;
-    if(SYSTEMTIMER_ms - lastFlow < flowInterval) return;
+    if(cycleBeginMs - lastFlow < flowInterval) return;
 
-    sendUartCommand(Command_Flow, (const uint8_t*)&actualValues, sizeof(actualValues));
-    lastFlow = SYSTEMTIMER_ms;
+    // FIXME sendUartCommand(Command_Flow, (const uint8_t*)&actualValues, sizeof(actualValues));
+    lastFlow = cycleBeginMs;
 }
 
 // PD2, PD7
 static void initDebug(void) {
     GPIOD->DDR |= GPIO_DDR_2 | GPIO_DDR_7;  // output
     GPIOD->CR1 |= GPIO_CR1_2 | GPIO_CR1_7;  // pull-push
+    GPIOD->CR2 |= GPIO_CR2_2 | GPIO_CR2_7;  // high speed
     // GPIOD->ODR |= GPIO_ODR_2;
     // GPIOD->ODR &= ~GPIO_ODR_2;
 }
@@ -1147,6 +1100,9 @@ int main(void) {
     BUTTON_init();
     DISPLAYS_init();
     initDebug();
+
+    enable_irq();
+    DISPLAYS_start();
     UART_write("== start ==\r\n");
 
     startBooting();
@@ -1155,14 +1111,35 @@ int main(void) {
         uint32_t lastDump   = SYSTEMTIMER_ms;
         uint32_t lastUpdate = SYSTEMTIMER_ms;
         while(1) {
+            GPIOD->ODR ^= GPIO_ODR_2;
+            cycleBeginMs = SYSTEMTIMER_ms;
+            ENCODER_process();
+            ENCODERBUTTON_process();
+            BUTTON_process();
+            recalcValues();
+            checkErrors();
+            controlFan();
+
+            switch(mode) {
+                case Mode_Booting:  doBooting();     break;
+                case Mode_MenuFun:                   break;
+                case Mode_MenuBeep:                  break;
+                case Mode_Fun1:                      break;
+                case Mode_Fun1Run:  doFun1();        break;
+                case Mode_Fun2:                      break;
+                case Mode_Fun2Pre:  doFun2Pre();     break;
+                case Mode_Fun2Run:  doFun2();        break;
+                case Mode_Fun2Warn: doFun2Warn();    break;
+                case Mode_Fun2Res:                   break;
+            }
+
             processUartRx();
             processFlow();
-            if(SYSTEMTIMER_ms - lastUpdate >= 100) {
+            if(cycleBeginMs - lastUpdate >= 100) {
                 updateDisplays();
-                lastUpdate = SYSTEMTIMER_ms;
+                lastUpdate = cycleBeginMs;
 
-                /*
-                if(SYSTEMTIMER_ms - lastDump >= 1000) {
+                if(cycleBeginMs - lastDump >= 1000) {
                     UART_write("err=");
                     UART_writeHexU8(error);
                     UART_write(" mode=");
@@ -1181,17 +1158,15 @@ int main(void) {
                     UART_writeHexU16(uSupRaw);
                     UART_write(" PC2=");
                     UART_write(GPIOC->IDR & GPIO_IDR_2 ? "1" : "0");
-                    UART_write(" load=");
-                    UART_writeHexU16(CFG->iSetCoef.offset);
-                    UART_writeHexU16(CFG->iSetCoef.mul);
-                    UART_writeHexU16(CFG->iSetCoef.div);
+                    //UART_write(" load=");
+                    //UART_writeHexU16(CFG->iSetCoef.offset);
+                    //UART_writeHexU16(CFG->iSetCoef.mul);
+                    //UART_writeHexU16(CFG->iSetCoef.div);
                     UART_write("\r\n");
 
-                    lastDump = SYSTEMTIMER_ms;
+                    lastDump = cycleBeginMs;
                 }
-                */
             }
-            actualValuesPinned = false;
         }
     }
 }

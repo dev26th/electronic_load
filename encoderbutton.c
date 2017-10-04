@@ -10,26 +10,34 @@
 
 #define BUTTON_BOUNCE_TIME_MS 20
 
-struct ButtonState {
-    volatile bool pressed;
-    volatile uint32_t lastCheck;
-};
-static struct ButtonState encoderButtonState;
+static volatile bool pending;
 
 void ENCODERBUTTON_init(void) {
     GPIOC->CR1 |= GPIO_CR1_3;  // pull-up
 }
 
-void ENCODERBUTTON_process(void) {
-    bool pressed;
+// ~3.4 us
+void ENCODERBUTTON_cycle(void) {
+    static bool pressed;
+    static uint32_t lastCheck;
+    bool p;
 
-    if(SYSTEMTIMER_ms - encoderButtonState.lastCheck < BUTTON_BOUNCE_TIME_MS) return;
+    if(pending) return;
+    if(SYSTEMTIMER_ms - lastCheck < BUTTON_BOUNCE_TIME_MS) return;
 
-    pressed = !(GPIOC->IDR & GPIO_CR1_3);
-    if(pressed != encoderButtonState.pressed) {
-        if(!pressed) ENCODERBUTTON_onRelease();
-        encoderButtonState.pressed = pressed;
-        encoderButtonState.lastCheck = SYSTEMTIMER_ms;
+    p = !(GPIOC->IDR & GPIO_CR1_3);
+    if(p != pressed) {
+        if(!p) pending = true;
+        pressed   = p;
+        lastCheck = SYSTEMTIMER_ms;
     }
+}
+
+void ENCODERBUTTON_process(void) {
+    if(!pending) return;
+
+    pending = false;
+
+    ENCODERBUTTON_onRelease();
 }
 
