@@ -185,7 +185,7 @@ void SYSTEMTIMER_onTack(void) {
 void ADC_onResult(const uint16_t* res) {
     // with small quasi-FIR-filter
     tempRaw   = (tempRaw   + 1) / 2 + res[0];
-    uCurRaw   = 4592; //(uCurRaw   + 1) / 2 + res[1];
+    uCurRaw   = (uCurRaw   + 1) / 2 + res[1];
     uSenseRaw = (uSenseRaw + 1) / 2 + res[2];
     uSupRaw   = (uSupRaw   + 1) / 2 + res[3];  // FIXME actually, we need this value only durung startup. Optimize?
 }
@@ -1148,6 +1148,7 @@ int main(void) {
                 updateDisplays();
                 lastUpdate = cycleBeginMs;
 
+                /*
                 if(cycleBeginMs - lastDump >= 1000) {
                     //UART_write("err=");
                     //UART_writeHexU8(error);
@@ -1155,22 +1156,22 @@ int main(void) {
                     //UART_writeHexU8(mode);
                     //UART_write(" temp=");
                     //UART_writeHexU16(tempRaw);
-                    UART_write(" uCurRaw=");
-                    UART_writeHexU16(uCurRaw);
-                    UART_write(" uCur=");
-                    UART_writeDecU32(uCur);
+                    //UART_write(" uCurRaw=");
+                    //UART_writeHexU16(uCurRaw);
+                    //UART_write(" uCur=");
+                    //UART_writeDecU32(uCur);
                     //UART_write(" uSenseRaw=");
                     //UART_writeHexU16(uSenseRaw);
                     //UART_write(" uSense=");
                     //UART_writeDecU32(uSense);
                     //UART_write(" uSup=");
                     //UART_writeHexU16(uSupRaw);
-                    UART_write(" sAh=");
-                    UART_writeDecU64(fun2State.sAh, 21);
-                    UART_write(" sWh=");
-                    UART_writeDecU64(fun2State.sWh, 21);
-                    UART_write(" wh=");
-                    UART_writeDecU32(fun2State.wh);
+                    //UART_write(" sAh=");
+                    //UART_writeDecU64(fun2State.sAh, 21);
+                    //UART_write(" sWh=");
+                    //UART_writeDecU64(fun2State.sWh, 21);
+                    //UART_write(" wh=");
+                    //UART_writeDecU32(fun2State.wh);
                     //UART_write(" PC2=");
                     //UART_write(GPIOC->IDR & GPIO_IDR_2 ? "1" : "0");
                     //UART_write(" load=");
@@ -1181,6 +1182,7 @@ int main(void) {
 
                     lastDump = cycleBeginMs;
                 }
+                */
             }
         }
     }
