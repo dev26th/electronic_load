@@ -35,6 +35,8 @@ void UART_writeHexU32(uint32_t v);
 
 void UART_writeDecU32(uint32_t v);
 
+void UART_writeDecU64(uint64_t v, uint8_t n);
+
 void UART_UART2_rx(void) __interrupt(IRQN_UART2_RX);
 
 #endif // _UART_H_

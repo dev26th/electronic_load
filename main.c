@@ -62,11 +62,12 @@ static uint16_t uCur;            // mV
 static uint16_t uSense;          // mV
 static uint32_t cycleBeginMs;
 
+const struct ValueCoef* uCoef;
 static volatile bool     conn4;
 static volatile uint16_t sCount;
 static          uint16_t sCountCopy;
-static volatile uint32_t sSum;
-static          uint32_t sSumCopy;
+static volatile uint32_t sSum;       // raw
+static          uint32_t sSumCopy;   // raw
 
 struct MenuState {
     uint8_t fun;
@@ -93,7 +94,7 @@ struct Fun2State {
     uint32_t ah;       // 1 unit = 1 mA*h
     uint64_t sAh;      // 1 unit = 2 mA*ms
     uint32_t wh;       // 1 unit = 1 mW*h
-    uint64_t sWh;      // 1 unit = 4 uW*ms, raw
+    uint64_t sWh;      // 1 unit = 2 uW*ms, raw
     bool     flip;
     uint32_t lastBeep;
 };
@@ -170,7 +171,7 @@ void SYSTEMTIMER_onTick(void) {
     BUTTON_cycle();
 
     ++sCount;
-    sSum += (conn4 ? uSense : uCur);
+    sSum += (conn4 ? uSenseRaw : uCurRaw);
 
     GPIOD->ODR &= ~GPIO_ODR_7;
 }
@@ -184,7 +185,7 @@ void SYSTEMTIMER_onTack(void) {
 void ADC_onResult(const uint16_t* res) {
     // with small quasi-FIR-filter
     tempRaw   = (tempRaw   + 1) / 2 + res[0];
-    uCurRaw   = (uCurRaw   + 1) / 2 + res[1];
+    uCurRaw   = 4592; //(uCurRaw   + 1) / 2 + res[1];
     uSenseRaw = (uSenseRaw + 1) / 2 + res[2];
     uSupRaw   = (uSupRaw   + 1) / 2 + res[3];  // FIXME actually, we need this value only durung startup. Optimize?
 }
@@ -337,6 +338,7 @@ static void startFun2(void) {
         encoderMode = EncoderMode_I0;
     updateISet();
     conn4 = (uSense > CFG->uSenseMin);
+    uCoef = (conn4 ? &CFG->uSenseCoef : &CFG->uCurCoef);
     fun2State.lastDisp = cycleBeginMs;
 }
 
@@ -415,11 +417,19 @@ static void doFun2(void) {
 
     copyActualValues();
     {
+        uint64_t wh;
+        uint32_t off = sCountCopy * uCoef->offset;
+        uint64_t sWh = (uint64_t)(sSumCopy > off ? sSumCopy - off : 0) * iSet;
+
         fun2State.sAh   += sCountCopy * iSet;
         fun2State.ah     = fun2State.sAh / (3600uL * 1000 / 2);
-        fun2State.sWh   += sSumCopy * iSet /* - sCountCopy*/;
-        fun2State.wh     = fun2State.sWh / (3600uL * 1000 * 1000 / 4);
-        // FIXME convert wh from raw
+        fun2State.sWh   += sWh;
+
+        wh = fun2State.sWh / (3600uL * 1000 * 1000 / 2);
+        wh *= uCoef->mul;
+        wh /= uCoef->div;
+        if(wh > UINT32_MAX) wh = UINT32_MAX;
+        fun2State.wh = (uint32_t)wh;
 
         if(fun2State.ah > CFG->ahMax || fun2State.wh > CFG->whMax) {
             startFun2Warn();
@@ -1139,24 +1149,30 @@ int main(void) {
                 lastUpdate = cycleBeginMs;
 
                 if(cycleBeginMs - lastDump >= 1000) {
-                    UART_write("err=");
-                    UART_writeHexU8(error);
-                    UART_write(" mode=");
-                    UART_writeHexU8(mode);
-                    UART_write(" temp=");
-                    UART_writeHexU16(tempRaw);
+                    //UART_write("err=");
+                    //UART_writeHexU8(error);
+                    //UART_write(" mode=");
+                    //UART_writeHexU8(mode);
+                    //UART_write(" temp=");
+                    //UART_writeHexU16(tempRaw);
                     UART_write(" uCurRaw=");
                     UART_writeHexU16(uCurRaw);
                     UART_write(" uCur=");
-                    UART_writeHexU16(uCur);
-                    UART_write(" uSense=");
-                    UART_writeHexU16(uSense);
-                    UART_write(" uSenseRaw=");
-                    UART_writeHexU16(uSenseRaw);
-                    UART_write(" uSup=");
-                    UART_writeHexU16(uSupRaw);
-                    UART_write(" PC2=");
-                    UART_write(GPIOC->IDR & GPIO_IDR_2 ? "1" : "0");
+                    UART_writeDecU32(uCur);
+                    //UART_write(" uSenseRaw=");
+                    //UART_writeHexU16(uSenseRaw);
+                    //UART_write(" uSense=");
+                    //UART_writeDecU32(uSense);
+                    //UART_write(" uSup=");
+                    //UART_writeHexU16(uSupRaw);
+                    UART_write(" sAh=");
+                    UART_writeDecU64(fun2State.sAh, 21);
+                    UART_write(" sWh=");
+                    UART_writeDecU64(fun2State.sWh, 21);
+                    UART_write(" wh=");
+                    UART_writeDecU32(fun2State.wh);
+                    //UART_write(" PC2=");
+                    //UART_write(GPIOC->IDR & GPIO_IDR_2 ? "1" : "0");
                     //UART_write(" load=");
                     //UART_writeHexU16(CFG->iSetCoef.offset);
                     //UART_writeHexU16(CFG->iSetCoef.mul);

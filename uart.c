@@ -43,12 +43,16 @@ void UART_writeHexU32(uint32_t v) {
 }
 
 void UART_writeDecU32(uint32_t v) {
-    char buf[11];
-    uint8_t i;
-    for(i = 0; i < 10; ++i) buf[i] = ' ';
-    buf[10] = '\0';
+    UART_writeDecU64(v, 10);
+}
 
-    i = 10;
+void UART_writeDecU64(uint64_t v, uint8_t n) {
+    char buf[22];
+    uint8_t i;
+    for(i = 0; i < n; ++i) buf[i] = ' ';
+    buf[n] = '\0';
+
+    i = n;
     do {
         uint8_t d = v % 10;
         v /= 10;
