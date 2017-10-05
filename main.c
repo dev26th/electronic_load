@@ -183,11 +183,17 @@ void SYSTEMTIMER_onTack(void) {
 
 // ~7 us
 void ADC_onResult(const uint16_t* res) {
+    // FIXME possible optimizations:
+    //   - uSup must be checked only during startup
+    //   - temp may be checked seldom, e.g. once per tick
+    //   - both uCur and uSense together are required only on start of Fun2
+    // So, we can reduce this measurement e.g. 1 x temp and 16 x uCur (or uSense) each 1 ms.
+
     // with small quasi-FIR-filter
     tempRaw   = (tempRaw   + 1) / 2 + res[0];
     uCurRaw   = (uCurRaw   + 1) / 2 + res[1];
     uSenseRaw = (uSenseRaw + 1) / 2 + res[2];
-    uSupRaw   = (uSupRaw   + 1) / 2 + res[3];  // FIXME actually, we need this value only durung startup. Optimize?
+    uSupRaw   = (uSupRaw   + 1) / 2 + res[3];
 }
 
 // --------------------------------------------------------------------------------------------------------------------
@@ -720,6 +726,7 @@ static uint8_t encoderStateToLeds(void) {
     return encLeds;
 }
 
+// FIXME to avoid flicker of last digit, we can and a small hysteresis just for display
 static void updateDisplays(void) {
     uint8_t bufA[4];
     uint8_t bufALeds = 0;
@@ -1120,7 +1127,7 @@ int main(void) {
         uint32_t lastDump   = SYSTEMTIMER_ms;
         uint32_t lastUpdate = SYSTEMTIMER_ms;
         while(1) {
-            GPIOD->ODR ^= GPIO_ODR_2;
+            //GPIOD->ODR ^= GPIO_ODR_2;
             cycleBeginMs = SYSTEMTIMER_ms;
             ENCODER_process();
             ENCODERBUTTON_process();

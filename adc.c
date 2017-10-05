@@ -27,6 +27,7 @@ void ADC_startScanCont(uint8_t n) {
 }
 
 void ADC_ADC1_eoc(void) __interrupt(IRQN_ADC1_EOC) {
+    GPIOD->ODR |= GPIO_ODR_2;
     ADC1->CSR = ADC1_CSR_EOCIE | 3;
 
     res[0] += ADC1->DB[0].L | (((uint16_t)ADC1->DB[0].H) << 8);
@@ -37,5 +38,6 @@ void ADC_ADC1_eoc(void) __interrupt(IRQN_ADC1_EOC) {
     --nCount;
     if(nCount == 1) ADC1->CR1 &= ~ADC1_CR1_CONT;
     if(nCount == 0) ADC_onResult(res);
+    GPIOD->ODR &= ~GPIO_ODR_2;
 }
 
