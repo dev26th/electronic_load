@@ -55,11 +55,11 @@ static volatile uint16_t uSenseRaw;
 static volatile uint16_t uSupRaw;
 static volatile uint16_t tempRaw;
 
-static int16_t  uSet;            // mV
-static int16_t  iSet;            // mA
-static int32_t  powLimit;        // uW
-static int16_t  uCur;            // mV
-static int16_t  uSense;          // mV
+static uint16_t uSet;            // mV
+static uint16_t iSet;            // mA
+static uint32_t powLimit;        // uW
+static uint16_t uCur;            // mV
+static uint16_t uSense;          // mV
 static uint32_t cycleBeginMs;
 
 static volatile bool     conn4;
@@ -69,8 +69,8 @@ static volatile uint32_t sSum;
 static          uint32_t sSumCopy;
 
 struct MenuState {
-    int8_t fun;
-    bool beep;
+    uint8_t fun;
+    bool    beep;
 };
 static struct MenuState menuState;
 
@@ -89,7 +89,7 @@ enum DisplayedValue {
 struct Fun2State {
     enum DisplayedValue disp;
     uint32_t lastDisp;
-    int16_t  u;
+    uint16_t u;
     uint32_t ah;       // 1 unit = 1 mA*h
     uint64_t sAh;      // 1 unit = 2 mA*ms
     uint32_t wh;       // 1 unit = 1 mW*h
@@ -117,7 +117,7 @@ enum FanState {
 static enum FanState fanState;
 
 struct ValueCoef {
-    int16_t  offset;
+    uint16_t offset;
     uint16_t mul;
     uint16_t div;
 };
@@ -132,20 +132,20 @@ struct Config {
     uint16_t         tempFanFull;
     uint16_t         tempLimit;
     uint16_t         tempDefect;
-    int16_t          iSetMin;       // mA
-    int16_t          iSetMax;       // mA
-    int16_t          uSetMin;       // mV
-    int16_t          uSetMax;       // mV
-    int16_t          uSenseMin;     // mV
-    int16_t          uNegative;     // mV
-    int16_t          uCurLimit;     // mV
-    int32_t          powLimit;      // mW
+    uint16_t         iSetMin;       // mA
+    uint16_t         iSetMax;       // mA
+    uint16_t         uSetMin;       // mV
+    uint16_t         uSetMax;       // mV
+    uint16_t         uSenseMin;     // mV
+    uint16_t         uNegative;     // raw
+    uint16_t         uCurLimit;     // mV
+    uint32_t         powLimit;      // mW
     uint32_t         ahMax;         // mAh
     uint32_t         whMax;         // mWh
     uint8_t          fun;
     uint8_t          beepOn;
-    int16_t          uSet;          // mV
-    int16_t          iSet;          // mA
+    uint16_t         uSet;          // mV
+    uint16_t         iSet;          // mA
 };
 static_assert(sizeof(struct Config) <= 128, "Config is bigger than EEPROM");
 #define CFG ((struct Config*)0x4000) // begin of the EEPROM
@@ -191,13 +191,14 @@ void ADC_onResult(const uint16_t* res) {
 
 // --------------------------------------------------------------------------------------------------------------------
 
-static int16_t recalcValue(int16_t raw, const struct ValueCoef* coef) {
-    int32_t v = (int32_t)raw + coef->offset;
+static uint16_t recalcValue(uint16_t raw, const struct ValueCoef* coef) {
+    uint32_t v;
+    if(raw < coef->offset) return 0;
+    v = raw - coef->offset;
     v *= coef->mul;
     v /= coef->div;
-    if(v > INT16_MAX) v = INT16_MAX;
-    if(v < INT16_MIN) v = INT16_MIN;
-    return (int16_t)v;
+    if(v > UINT16_MAX) v = UINT16_MAX;
+    return (uint16_t)v;
 }
 
 static void recalcValues(void) {
@@ -206,9 +207,7 @@ static void recalcValues(void) {
 }
 
 static void updateISet(void) {
-    int16_t v = recalcValue(iSet, &CFG->iSetCoef);
-    if(v <= 0) v = 1;
-    LOAD_set(v);
+    LOAD_set(recalcValue(iSet, &CFG->iSetCoef));
 }
 
 static void saveMenuSettings(void) {
@@ -417,9 +416,9 @@ static void doFun2(void) {
     copyActualValues();
     {
         fun2State.sAh   += sCountCopy * iSet;
-        fun2State.ah     = fun2State.sAh / (3600ul * 1000 / 2);
-        fun2State.sWh   += sSumCopy * sCountCopy * iSet;
-        fun2State.wh     = fun2State.sWh / (3600ul * 1000 * 1000 / 4);
+        fun2State.ah     = fun2State.sAh / (3600uL * 1000 / 2);
+        fun2State.sWh   += sSumCopy * iSet /* - sCountCopy*/;
+        fun2State.wh     = fun2State.sWh / (3600uL * 1000 * 1000 / 4);
         // FIXME convert wh from raw
 
         if(fun2State.ah > CFG->ahMax || fun2State.wh > CFG->whMax) {
@@ -452,7 +451,7 @@ static inline void beepEncoderButton(void) {
 static inline void checkErrors(void) {
     uint16_t temp = tempRaw;
 
-    if(uCur < CFG->uNegative || uSense < CFG->uNegative) {
+    if(uCurRaw < CFG->uNegative || uSenseRaw < CFG->uNegative) {
         error |= ERROR_POLARITY;
     }
     else {
@@ -571,7 +570,7 @@ void BUTTON_onRelease(bool longpress) {
     }
 }
 
-static void updateValue(int16_t* v, int16_t d, uint16_t min, uint16_t max) {
+static void updateValue(uint16_t* v, int16_t d, uint16_t min, uint16_t max) {
     if(d < 0) {
         if(*v < min - d)
             *v = min;
@@ -621,7 +620,7 @@ void ENCODER_onChange(int8_t d) {
             break;
 
         case Mode_Fun2Res:
-            fun2State.disp = (enum DisplayedValue)(((int8_t)fun2State.disp + 3 + d) % 3);
+            fun2State.disp = (enum DisplayedValue)(((uint8_t)fun2State.disp + 3 + d) % 3);
             break;
     }
 }
@@ -684,7 +683,7 @@ static void displayDashes(uint8_t* buf) {
     buf[3] = DISPLAYS_SYM_DASH;
 }
 
-static void displayInt(int16_t v, uint8_t dot, uint8_t* buf) {
+static void displayInt(uint16_t v, uint8_t dot, uint8_t* buf) {
     while(v > 9999) {
         v /= 10;
         ++dot;
@@ -850,15 +849,15 @@ static inline void initialState(void) {
 /*
     FLASH_unlockOpt();
 
-    CFG->iSetCoef.offset   = -66;
+    CFG->iSetCoef.offset   = 66;
     CFG->iSetCoef.mul      = 5329;
     CFG->iSetCoef.div      = 1000;
 
-    CFG->uCurCoef.offset   = -606;
+    CFG->uCurCoef.offset   = 606;
     CFG->uCurCoef.mul      = 30000;
     CFG->uCurCoef.div      = 23912;
 
-    CFG->uSenseCoef.offset = -670;
+    CFG->uSenseCoef.offset = 670;
     CFG->uSenseCoef.mul    = 30000;
     CFG->uSenseCoef.div    = 27215;
 
@@ -876,11 +875,11 @@ static inline void initialState(void) {
     CFG->uSetMin           =    1000;
     CFG->uSetMax           =   25000;
     CFG->uSenseMin         =      50;
-    CFG->uNegative         =     -50;
+    CFG->uNegative         =     500;
     CFG->uCurLimit         =   31000;
-    CFG->powLimit          =  150000l;
-    CFG->ahMax             =  999900l;
-    CFG->whMax             = 9999000l;
+    CFG->powLimit          =  150000uL;
+    CFG->ahMax             =  999900uL;
+    CFG->whMax             = 9999000uL;
 
     FLASH_waitOpt();
     FLASH_lockOpt();
