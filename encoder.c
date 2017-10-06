@@ -5,7 +5,8 @@
 #include "stm8.h"
 #include "systemtimer.h"
 
-static int8_t encoderValue;
+static volatile int8_t encoderValue;
+static          int8_t encoderValueCopy;
 
 void ENCODER_init(void) {
     GPIOB->CR1 |= GPIO_CR1_5 | GPIO_CR1_4;  // pull-up
@@ -15,14 +16,17 @@ void ENCODER_init(void) {
 }
 
 void ENCODER_process(void) {
-    int8_t value;
-    disable_irq();
-    value = encoderValue;
-    encoderValue = 0;
-    enable_irq();
+    // Atomic:
+    //   encoderValueCopy = encoderValue;
+    //   encoderValue = 0;
+    __asm
+    CLR     A
+    EXG     A, _encoderValue
+    LD      _encoderValueCopy, A
+    __endasm;
 
-    if(value != 0)
-        ENCODER_onChange(value);
+    if(encoderValueCopy != 0)
+        ENCODER_onChange(encoderValueCopy);
 }
 
 void ENCODERBUTTON_exti(void) __interrupt(IRQN_EXTI1) {

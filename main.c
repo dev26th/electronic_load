@@ -64,8 +64,8 @@ static uint32_t cycleBeginMs;
 
 const struct ValueCoef* uCoef;
 static volatile bool     conn4;
-static volatile uint16_t sCount;
-static          uint16_t sCountCopy;
+static volatile uint8_t  sCount;
+static          uint8_t  sCountCopy;
 static volatile uint32_t sSum;       // raw
 static          uint32_t sSumCopy;   // raw
 
@@ -285,13 +285,31 @@ static void saveSettings() {
 }
 
 static void copyActualValues(void) {
-    // FIXME use optimistic lock to avoid sim?
+    // Cannot avoid 'sim' here
     disable_irq();
     sCountCopy = sCount;
     sSumCopy   = sSum;
     sCount = 0;
     sSum   = 0;
     enable_irq();
+/*
+    __asm
+    CLR     A
+    CLRW    X
+    SIM
+    BSET 0x500F, #2
+    MOV     _sCountCopy, _sCount
+    LD      _sCount, A
+    MOV     _sSumCopy+0, _sSum+0
+    MOV     _sSumCopy+1, _sSum+1
+    MOV     _sSumCopy+2, _sSum+2
+    MOV     _sSumCopy+3, _sSum+3
+    LDW     _sSum+0, X
+    LDW     _sSum+2, X
+    BRES 0x500F, #2
+    RIM
+    __endasm;
+*/
 }
 
 static void startFun1(void) {

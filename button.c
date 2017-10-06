@@ -6,8 +6,14 @@
 #define BUTTON_BOUNCE_TIME_MS 20
 #define BUTTON_LONG_TIME_MS 1000
 
-static volatile bool longPress;
-static volatile bool pending;
+enum PressValue {
+    PressValue_None,
+    PressValue_Short,
+    PressValue_Long
+};
+static volatile enum PressValue pressValue;
+static          enum PressValue pressValueCopy;
+
 static volatile bool pressed;
 static volatile bool pressProcessed;
 static volatile uint32_t lastCheck;
@@ -21,14 +27,13 @@ void BUTTON_init(void) {
 void BUTTON_cycle(void) {
     bool p;
 
-    if(pending) return;
+    if(pressValue != PressValue_None) return;
     if((SYSTEMTIMER_ms - lastCheck) < BUTTON_BOUNCE_TIME_MS) return;
 
     p = BUTTON_isPressed();
     if(p && pressed && (SYSTEMTIMER_ms - pressTime) >= BUTTON_LONG_TIME_MS) {
         if(!pressProcessed) {
-            longPress = true;
-            pending = true;
+            pressValue = PressValue_Long;
             pressProcessed = true;
         }
     }
@@ -37,8 +42,7 @@ void BUTTON_cycle(void) {
             pressTime = SYSTEMTIMER_ms;
         }
         else if(!pressProcessed) {
-            longPress = false;
-            pending = true;
+            pressValue = PressValue_Short;
         }
         pressed = p;
         lastCheck = SYSTEMTIMER_ms;
@@ -47,14 +51,19 @@ void BUTTON_cycle(void) {
 }
 
 void BUTTON_process(void) {
-    int8_t l;
-    if(!pending) return;
+    // Atomic:
+    //   pressValueCopy = pressValue;
+    //   pressValue = 0;
+    __asm
+    CLR     A
+    EXG     A, _pressValue
+    LD      _pressValueCopy, A
+    __endasm;
 
-    disable_irq();
-    l = longPress;
-    pending = false;
-    enable_irq();
-
-    BUTTON_onRelease(l);
+    switch(pressValueCopy) {
+        case PressValue_None:  break;
+        case PressValue_Short: BUTTON_onRelease(false); break;
+        case PressValue_Long:  BUTTON_onRelease(true);  break;
+    }
 }
 
