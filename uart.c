@@ -86,6 +86,7 @@ void UART_rxDone(void) {
     resetRx();
 }
 
+// 2-5.3 us
 void UART_process(void) {
     uint8_t v;
     uint8_t b;

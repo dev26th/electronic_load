@@ -19,8 +19,6 @@ void SYSTEMTIMER_waitMsOnStart(uint32_t ms);
 
 void SYSTEMTIMER_init(void); // 1 kHz
 
-uint32_t SYSTEMTIMER_correctTime(uint32_t ms); // FIXME
-
 void SYSTEMTIMER_TIM2_overflow(void) __interrupt(IRQN_TIM2_UP);
 
 #endif // _SYSTEM_TIMER_H_

@@ -7,7 +7,7 @@
 #include "stm8.h"
 #include "settings.h"
 
-#define UART_RXBUF_SIZE 32
+#define UART_RXBUF_SIZE 250
 
 const uint8_t* UART_getRx(uint8_t* size);
 bool UART_hasChecksum(void);

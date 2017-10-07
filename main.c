@@ -21,6 +21,8 @@
 
 // --------------------------------------------------------------------------------------------------------------------
 
+#define VERSION 0x00010000
+
 #define LED_V   0x01
 #define LED_AH  0x02
 #define LED_WH  0x04
@@ -159,13 +161,37 @@ static uint8_t display[8];
 static uint8_t inputDisable;
 static uint16_t flowInterval = 0xFFFF;
 static uint32_t lastFlow;
+static uint8_t commReply[18];
+
+enum Command {
+    Command_ReadCal           = 0x01,
+    Command_WriteCal,
+    Command_Display,
+    Command_Beep,
+    Command_Fan,
+    Command_InputDisable,
+    Command_ReadSettings,
+    Command_WriteSettings,
+    Command_Go,
+    Command_GetState,
+    Command_StartFlow,
+    Command_Bootloader,
+    Command_ReadRaw,
+    Command_WriteRaw,
+    Command_Version,
+
+    Command_Startup           = 0x20,
+    Command_Flow              = 0x2B,
+    Command_Response          = 0x40,
+    Command_Error             = 0x80
+};
 
 // --------------------------------------------------------------------------------------------------------------------
 // this functions are called in interrupt context
 
 // ~13 us
 void SYSTEMTIMER_onTick(void) {
-    GPIOD->ODR |= GPIO_ODR_7;
+    //GPIOD->ODR |= GPIO_ODR_7;
     BEEP_process();
     ENCODERBUTTON_cycle();
     BUTTON_cycle();
@@ -173,7 +199,7 @@ void SYSTEMTIMER_onTick(void) {
     ++sCount;
     sSum += (conn4 ? uSenseRaw : uCurRaw);
 
-    GPIOD->ODR &= ~GPIO_ODR_7;
+    //GPIOD->ODR &= ~GPIO_ODR_7;
 }
 
 // ADC-cycle duration: ~515 us from start until return from onResult
@@ -915,8 +941,9 @@ static inline void initialState(void) {
     else if(iSet > CFG->iSetMax) iSet = CFG->iSetMax;
 }
 
+// 7.6 us == 91 cycles
 static uint8_t crc8(uint8_t crc, uint8_t b) __naked {
-    // Algorithm:
+    // Algorithm (12 us):
     //  crc ^= b;
     //  for(uint8_t i = 0; i < 8; ++i)
     //      crc = crc & 0x80 ? (crc << 1) ^ 0x07 : crc << 1;
@@ -924,7 +951,6 @@ static uint8_t crc8(uint8_t crc, uint8_t b) __naked {
 
     (void)crc; (void)b;
     __asm
-
     LD      A, (0x03, SP)   ;        A == crc
     XOR     A, (0x04, SP)
     LDW     Y, #8           ;        Y == i
@@ -942,27 +968,8 @@ static uint8_t crc8(uint8_t crc, uint8_t b) __naked {
     JRNE    00001$          ; 2   2
 
     RET
-     __endasm;
+    __endasm;
 }
-
-enum Command {
-    Command_ReadCal           = 0x01,
-    Command_WriteCal,
-    Command_Display,
-    Command_Beep,
-    Command_Fan,
-    Command_InputDisable,
-    Command_ReadSettings,
-    Command_WriteSettings,
-    Command_Go,
-    Command_GetState,
-    Command_StartFlow,
-    Command_StartBootloader,
-
-    Command_Flow              = 0x2B,
-    Command_Response          = 0x40,
-    Command_Error             = 0x80
-};
 
 static void sendUartCommand(uint8_t cmd, const uint8_t* data, uint8_t size) {
     uint8_t crc;
@@ -984,10 +991,39 @@ static void commitUartCommand(uint8_t cmd) {
     sendUartCommand(cmd, NULL, 0);
 }
 
-static void processUartCommand(const uint8_t* buf, uint8_t size) {
-    static uint8_t reply[4];
+static void prepareActualState(uint8_t* buf) {
+    *(buf + 0) = (uint8_t)mode;
+    *(buf + 1) = error;
+    *(uint16_t*)(buf + 2) = uCur;
+    *(uint16_t*)(buf + 4) = uSense;
+    *(uint16_t*)(buf + 6) = tempRaw;
+    *(uint16_t*)(buf + 8) = uSupRaw;
+    *(uint32_t*)(buf + 10) = fun2State.ah;
+    *(uint32_t*)(buf + 14) = fun2State.wh;
+}
 
+static void processUartCommand(const uint8_t* buf, uint8_t size) {
     switch(buf[0]) {
+        case Command_ReadCal:
+            if(size == 1) {
+                sendUartCommand(Command_ReadCal | Command_Response, (const uint8_t*)CFG, sizeof(struct Config));
+            }
+            break;
+
+        case Command_WriteCal:
+            if(size == 1 + sizeof(struct Config)) {
+                uint8_t i;
+                uint8_t* cfg = (uint8_t*)CFG;
+
+                FLASH_unlockOpt();
+                for(i = 0; i < sizeof(struct Config); ++i) cfg[i] = buf[i+1];
+                FLASH_waitOpt();
+                FLASH_lockOpt();
+
+                commitUartCommand(buf[0]);
+            }
+            break;
+
         case Command_Display:
             if(size == 10) {
                 displayOverride = buf[1];
@@ -1026,11 +1062,11 @@ static void processUartCommand(const uint8_t* buf, uint8_t size) {
 
         case Command_ReadSettings:
             if(size == 1) {
-                reply[0] = (uint8_t)(uSet >> 8);
-                reply[1] = (uint8_t)uSet;
-                reply[2] = (uint8_t)(iSet >> 8);
-                reply[3] = (uint8_t)iSet;
-                sendUartCommand(Command_ReadSettings | Command_Response, reply, 4);
+                commReply[0] = (uint8_t)(uSet >> 8);
+                commReply[1] = (uint8_t)uSet;
+                commReply[2] = (uint8_t)(iSet >> 8);
+                commReply[3] = (uint8_t)iSet;
+                sendUartCommand(Command_ReadSettings | Command_Response, commReply, 4);
             }
             break;
 
@@ -1042,9 +1078,17 @@ static void processUartCommand(const uint8_t* buf, uint8_t size) {
             }
             break;
 
+        case Command_Go:                 // FIXME
+            if(size == 2) {
+                commitUartCommand(buf[0]);
+            }
+            break;
+
         case Command_GetState:
             if(size == 1) {
-                // FIXME sendUartCommand(Command_GetState | Command_Response, (const uint8_t*)&actualValues, sizeof(actualValues));
+                static_assert(sizeof(commReply) >= 18, "Buffer too small");
+                prepareActualState(commReply);
+                sendUartCommand(Command_GetState | Command_Response, commReply, 18);
             }
             break;
 
@@ -1055,11 +1099,56 @@ static void processUartCommand(const uint8_t* buf, uint8_t size) {
             }
             break;
 
+        case Command_Bootloader:         // FIXME
+            if(size == 2) {
+                commitUartCommand(buf[0]);
+            }
+            break;
+
+        case Command_ReadRaw:
+            if(size == 1) {
+                uint16_t* u1 = commReply;
+                uint16_t* u2 = commReply + 2;
+                *u1 = uCurRaw;
+                *u2 = uSenseRaw;
+                sendUartCommand(Command_ReadRaw | Command_Response, commReply, 4);
+            }
+            break;
+
+        case Command_WriteRaw:
+            if(size == 3) {
+                uint16_t iSetRaw = ((uint16_t)buf[1] << 8) | buf[2];
+                if(iSetRaw == 0xFFFF) {
+                    LOAD_stop();
+                    LOAD_set(0);
+                }
+                else {
+                    LOAD_set(iSetRaw);
+                    LOAD_start();
+                }
+                commitUartCommand(buf[0]);
+            }
+            break;
+
+        case Command_Version:
+            if(size == 1) {
+                uint32_t* reply32 = commReply;
+                *reply32 = VERSION;
+                sendUartCommand(Command_Version | Command_Response, commReply, 4);
+            }
+            break;
+
         default:
             UART_write("->");
             for(; size > 0; --size, ++buf) UART_writeHexU8(*buf);
     }
-    UART_write("cmd done\r\n");
+
+    /*
+    UART_write("cmd done ");
+    UART_writeHexU8(buf[0]);
+    UART_writeHexU8(size);
+    UART_write("\r\n");
+    */
 }
 
 static void processUartRx(void) {
@@ -1076,20 +1165,24 @@ static void processUartRx(void) {
     crc = 0;
     if(UART_hasChecksum()) {
         for(p = rx, n = rxSize; n > 0; --n, ++p) crc = crc8(crc, *p);
+        --rxSize;
     }
 
-    if(crc == 0 && rxSize > 1)
-        processUartCommand(rx, rxSize-1);
+    if(crc == 0 && rxSize > 0)
+        processUartCommand(rx, rxSize);
     else
         UART_write("checksum mismatch\r\n");
     UART_rxDone();
 }
 
 static void processFlow(void) {
+    static_assert(sizeof(commReply) >= 18, "Buffer too small");
+
     if(flowInterval == 0xFFFF) return;
     if(cycleBeginMs - lastFlow < flowInterval) return;
 
-    // FIXME sendUartCommand(Command_Flow, (const uint8_t*)&actualValues, sizeof(actualValues));
+    prepareActualState(commReply);
+    sendUartCommand(Command_Flow, commReply, 18);
     lastFlow = cycleBeginMs;
 }
 
@@ -1100,6 +1193,8 @@ static void initDebug(void) {
     GPIOD->CR2 |= GPIO_CR2_2 | GPIO_CR2_7;  // high speed
     // GPIOD->ODR |= GPIO_ODR_2;
     // GPIOD->ODR &= ~GPIO_ODR_2;
+    // __asm BSET 0x500F, #2 __endasm
+    // __asm BRES 0x500F, #2 __endasm
 }
 
 int main(void) {
@@ -1119,7 +1214,7 @@ int main(void) {
 
     enable_irq();
     DISPLAYS_start();
-    UART_write("== start ==\r\n");
+    sendUartCommand(Command_Startup, NULL, 0);
 
     startBooting();
 
