@@ -1099,8 +1099,14 @@ static void processUartCommand(const uint8_t* buf, uint8_t size) {
             }
             break;
 
-        case Command_Bootloader:         // FIXME
+        case Command_Bootloader:
             if(size == 2) {
+                uint8_t v = (buf[1] ? 0x55 : 0);
+                FLASH_unlockOpt();
+                OPT->BL  =  v;
+                OPT->NBL = ~v;
+                FLASH_waitOpt();
+                FLASH_lockOpt();
                 commitUartCommand(buf[0]);
             }
             break;
