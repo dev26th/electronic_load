@@ -244,13 +244,13 @@ static void updateISet(void) {
 }
 
 static void saveMenuSettings(void) {
-    FLASH_unlockOpt();
+    FLASH_unlockData();
 
     CFG->fun    = menuState.fun;
     CFG->beepOn = menuState.beep;
 
-    FLASH_waitOpt();
-    FLASH_lockOpt();
+    FLASH_waitData();
+    FLASH_lockData();
 }
 
 static void loadMenuSettings(void) {
@@ -300,13 +300,13 @@ static void doBooting(void) {
 
 static void saveSettings() {
     if(iSet != CFG->iSet || uSet != CFG->uSet) {
-        FLASH_unlockOpt();
+        FLASH_unlockData();
 
         CFG->uSet = uSet;
         CFG->iSet = iSet;
 
-        FLASH_waitOpt();
-        FLASH_lockOpt();
+        FLASH_waitData();
+        FLASH_lockData();
     }
 }
 
@@ -890,7 +890,7 @@ static void updateDisplays(void) {
 
 static inline void initialState(void) {
 /*
-    FLASH_unlockOpt();
+    FLASH_unlockData();
 
     CFG->iSetCoef.offset   = 66;
     CFG->iSetCoef.mul      = 5329;
@@ -924,8 +924,8 @@ static inline void initialState(void) {
     CFG->ahMax             =  999900uL;
     CFG->whMax             = 9999000uL;
 
-    FLASH_waitOpt();
-    FLASH_lockOpt();
+    FLASH_waitData();
+    FLASH_lockData();
 */
     error       = 0;
     encoderMode = EncoderMode_I1;
@@ -1015,10 +1015,10 @@ static void processUartCommand(const uint8_t* buf, uint8_t size) {
                 uint8_t i;
                 uint8_t* cfg = (uint8_t*)CFG;
 
-                FLASH_unlockOpt();
+                FLASH_unlockData();
                 for(i = 0; i < sizeof(struct Config); ++i) cfg[i] = buf[i+1];
-                FLASH_waitOpt();
-                FLASH_lockOpt();
+                FLASH_waitData();
+                FLASH_lockData();
 
                 commitUartCommand(buf[0]);
             }
@@ -1095,6 +1095,7 @@ static void processUartCommand(const uint8_t* buf, uint8_t size) {
         case Command_StartFlow:
             if(size == 3) {
                 flowInterval = ((uint16_t)buf[1] << 8) | buf[2];
+                lastFlow = cycleBeginMs - flowInterval; // first output - right now
                 commitUartCommand(buf[0]);
             }
             break;
@@ -1189,7 +1190,8 @@ static void processFlow(void) {
 
     prepareActualState(commReply);
     sendUartCommand(Command_Flow, commReply, 18);
-    lastFlow = cycleBeginMs;
+    lastFlow += flowInterval;
+    if(cycleBeginMs - lastFlow > flowInterval) lastFlow = cycleBeginMs; // a big gap for some reason? - jump
 }
 
 // PD2, PD7
