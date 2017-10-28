@@ -888,6 +888,18 @@ static void updateDisplays(void) {
     DISPLAYS_display(bufA, bufB);
 }
 
+static void recalcConfigValues() {
+    powLimit    = (int32_t)CFG->powLimit * 1000;
+
+    uSet = CFG->uSet;
+    if(uSet < CFG->uSetMin)      uSet = CFG->uSetMin;
+    else if(uSet > CFG->uSetMax) uSet = CFG->uSetMax;
+
+    iSet = CFG->iSet;
+    if(iSet < CFG->iSetMin)      iSet = CFG->iSetMin;
+    else if(iSet > CFG->iSetMax) iSet = CFG->iSetMax;
+}
+
 static inline void initialState(void) {
 /*
     FLASH_unlockData();
@@ -920,7 +932,7 @@ static inline void initialState(void) {
     CFG->uSenseMin         =      50;
     CFG->uNegative         =     500;
     CFG->uCurLimit         =   31000;
-    CFG->powLimit          =  150000uL;
+    CFG->powLimit          =   60000uL;
     CFG->ahMax             =  999900uL;
     CFG->whMax             = 9999000uL;
 
@@ -930,15 +942,7 @@ static inline void initialState(void) {
     error       = 0;
     encoderMode = EncoderMode_I1;
     fanState    = FanState_Off;
-    powLimit    = (int32_t)CFG->powLimit * 1000;
-
-    uSet = CFG->uSet;
-    if(uSet < CFG->uSetMin)      uSet = CFG->uSetMin;
-    else if(uSet > CFG->uSetMax) uSet = CFG->uSetMax;
-
-    iSet = CFG->iSet;
-    if(iSet < CFG->iSetMin)      iSet = CFG->iSetMin;
-    else if(iSet > CFG->iSetMax) iSet = CFG->iSetMax;
+    recalcConfigValues();
 }
 
 // 7.6 us == 91 cycles
@@ -1019,6 +1023,7 @@ static void processUartCommand(const uint8_t* buf, uint8_t size) {
                 for(i = 0; i < sizeof(struct Config); ++i) cfg[i] = buf[i+1];
                 FLASH_waitData();
                 FLASH_lockData();
+                recalcConfigValues();
 
                 commitUartCommand(buf[0]);
             }
