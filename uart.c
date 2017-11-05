@@ -92,19 +92,16 @@ void UART_process(void) {
     uint8_t b;
     if(!RINGBUFFER_takeIfNotEmpty(&b)) return;
 
+    if(rxState != RxState_Stop) {
+        if(b == 'S' || b == 's') {            // start
+            resetRx();
+            rxState = RxState_H;
+            hasChecksum = (b == 'S');
+            return;
+        }
+    }
+
     switch(rxState) {
-        case RxState_Start:
-            if(b == 'S') {            // start with checksum
-                rxState = RxState_H;
-                hasChecksum = true;
-            }
-            else if(b == 's') {       // start, no checksum
-                rxState = RxState_H;
-                hasChecksum = false;
-            }
-
-            break;
-
         case RxState_H:
         case RxState_L:
             if(b >= '0' && b <= '9') {
@@ -141,6 +138,7 @@ void UART_process(void) {
 
             break;
 
+        case RxState_Start:
         case RxState_Stop:
             nop();  // who are the EVELYN and the DOG?
             break; // ignore all
