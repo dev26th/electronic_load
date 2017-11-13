@@ -63,6 +63,7 @@ static uint32_t powLimit;        // uW
 static uint16_t uCur;            // mV
 static uint16_t uSense;          // mV
 static uint32_t cycleBeginMs;
+static bool uiSetModified;
 
 const struct ValueCoef* uCoef;
 static volatile bool     conn4;
@@ -164,26 +165,30 @@ static uint32_t lastFlow;
 static uint8_t commReply[18];
 
 enum Command {
-    Command_ReadCal           = 0x01,
-    Command_WriteCal,
+    Command_Reboot            = 0x01,
+    Command_GetVersion,
+    Command_ReadConfig,
+    Command_WriteConfig,
     Command_Display,
     Command_Beep,
     Command_Fan,
     Command_InputDisable,
     Command_ReadSettings,
     Command_WriteSettings,
-    Command_Go,
+    Command_SetMode,
     Command_GetState,
-    Command_StartFlow,
-    Command_Bootloader,
+    Command_ResetState,
+    Command_FlowState,
     Command_ReadRaw,
     Command_WriteRaw,
-    Command_Version,
+    Command_Bootloader,
+};
 
-    Command_Startup           = 0x20,
-    Command_Flow              = 0x2B,
-    Command_Response          = 0x40,
-    Command_Error             = 0x80
+enum CommandState {
+    CommandState_Request      = 0x00,
+    CommandState_Response     = 0x40,
+    CommandState_Event        = 0x80,
+    CommandState_Error        = 0xC0
 };
 
 // --------------------------------------------------------------------------------------------------------------------
@@ -345,6 +350,7 @@ static void doFun1(void) {
 
     if((int32_t)uCur * iSet >= powLimit) {
         iSet = (powLimit / uCur / 10) * 10;
+        uiSetModified = true;
         updateISet();
     }
 
@@ -439,6 +445,7 @@ static void doFun2(void) {
 
     if((int32_t)uCur * iSet >= powLimit) {
         iSet = (powLimit / uCur / 10) * 10;
+        uiSetModified = true;
         updateISet();
     }
 
@@ -655,6 +662,7 @@ void ENCODER_onChange(int8_t d) {
             }
 
             beepEncoder();
+            uiSetModified = true;
             updateISet();
             break;
 
@@ -991,7 +999,7 @@ static void sendUartCommand(uint8_t cmd, const uint8_t* data, uint8_t size) {
 }
 
 static void commitUartCommand(uint8_t cmd) {
-    cmd |= (uint8_t)Command_Response;
+    cmd |= (uint8_t)CommandState_Response;
     sendUartCommand(cmd, NULL, 0);
 }
 
@@ -1006,15 +1014,36 @@ static void prepareActualState(uint8_t* buf) {
     *(uint32_t*)(buf + 14) = fun2State.wh;
 }
 
+static void prepareActualSettings(uint8_t* buf) {
+    buf[0] = (uint8_t)(uSet >> 8);
+    buf[1] = (uint8_t)uSet;
+    buf[2] = (uint8_t)(iSet >> 8);
+    buf[3] = (uint8_t)iSet;
+}
+
 static void processUartCommand(const uint8_t* buf, uint8_t size) {
     switch(buf[0]) {
-        case Command_ReadCal:
+        case Command_Reboot: // FIXME
             if(size == 1) {
-                sendUartCommand(Command_ReadCal | Command_Response, (const uint8_t*)CFG, sizeof(struct Config));
+                commitUartCommand(buf[0]);
             }
             break;
 
-        case Command_WriteCal:
+        case Command_GetVersion:
+            if(size == 1) {
+                uint32_t* reply32 = commReply;
+                *reply32 = VERSION;
+                sendUartCommand(Command_GetVersion | CommandState_Response, commReply, 4);
+            }
+            break;
+
+        case Command_ReadConfig:
+            if(size == 1) {
+                sendUartCommand(Command_ReadConfig | CommandState_Response, (const uint8_t*)CFG, sizeof(struct Config));
+            }
+            break;
+
+        case Command_WriteConfig:
             if(size == 1 + sizeof(struct Config)) {
                 uint8_t i;
                 uint8_t* cfg = (uint8_t*)CFG;
@@ -1067,11 +1096,8 @@ static void processUartCommand(const uint8_t* buf, uint8_t size) {
 
         case Command_ReadSettings:
             if(size == 1) {
-                commReply[0] = (uint8_t)(uSet >> 8);
-                commReply[1] = (uint8_t)uSet;
-                commReply[2] = (uint8_t)(iSet >> 8);
-                commReply[3] = (uint8_t)iSet;
-                sendUartCommand(Command_ReadSettings | Command_Response, commReply, 4);
+                prepareActualSettings(commReply);
+                sendUartCommand(Command_ReadSettings | CommandState_Response, commReply, 4);
             }
             break;
 
@@ -1083,7 +1109,7 @@ static void processUartCommand(const uint8_t* buf, uint8_t size) {
             }
             break;
 
-        case Command_Go:                 // FIXME
+        case Command_SetMode:                 // FIXME
             if(size == 2) {
                 commitUartCommand(buf[0]);
             }
@@ -1093,26 +1119,21 @@ static void processUartCommand(const uint8_t* buf, uint8_t size) {
             if(size == 1) {
                 static_assert(sizeof(commReply) >= 18, "Buffer too small");
                 prepareActualState(commReply);
-                sendUartCommand(Command_GetState | Command_Response, commReply, 18);
+                sendUartCommand(Command_GetState | CommandState_Response, commReply, 18);
             }
             break;
 
-        case Command_StartFlow:
-            if(size == 3) {
-                flowInterval = ((uint16_t)buf[1] << 8) | buf[2];
-                lastFlow = cycleBeginMs - flowInterval; // first output - right now
+        case Command_ResetState:
+            if(size == 1) {
+                resetFun2();
                 commitUartCommand(buf[0]);
             }
             break;
 
-        case Command_Bootloader:
-            if(size == 2) {
-                uint8_t v = (buf[1] ? 0x55 : 0);
-                FLASH_unlockOpt();
-                OPT->BL  =  v;
-                OPT->NBL = ~v;
-                FLASH_waitOpt();
-                FLASH_lockOpt();
+        case Command_FlowState:
+            if(size == 3) {
+                flowInterval = ((uint16_t)buf[1] << 8) | buf[2];
+                lastFlow = cycleBeginMs - flowInterval; // first output - right now
                 commitUartCommand(buf[0]);
             }
             break;
@@ -1123,7 +1144,7 @@ static void processUartCommand(const uint8_t* buf, uint8_t size) {
                 uint16_t* u2 = commReply + 2;
                 *u1 = uCurRaw;
                 *u2 = uSenseRaw;
-                sendUartCommand(Command_ReadRaw | Command_Response, commReply, 4);
+                sendUartCommand(Command_ReadRaw | CommandState_Response, commReply, 4);
             }
             break;
 
@@ -1142,11 +1163,15 @@ static void processUartCommand(const uint8_t* buf, uint8_t size) {
             }
             break;
 
-        case Command_Version:
-            if(size == 1) {
-                uint32_t* reply32 = commReply;
-                *reply32 = VERSION;
-                sendUartCommand(Command_Version | Command_Response, commReply, 4);
+        case Command_Bootloader:
+            if(size == 2) {
+                uint8_t v = (buf[1] ? 0x55 : 0);
+                FLASH_unlockOpt();
+                OPT->BL  =  v;
+                OPT->NBL = ~v;
+                FLASH_waitOpt();
+                FLASH_lockOpt();
+                commitUartCommand(buf[0]);
             }
             break;
 
@@ -1194,9 +1219,17 @@ static void processFlow(void) {
     if(cycleBeginMs - lastFlow < flowInterval) return;
 
     prepareActualState(commReply);
-    sendUartCommand(Command_Flow, commReply, 18);
+    sendUartCommand(Command_GetState | CommandState_Event, commReply, 18);
     lastFlow += flowInterval;
     if(cycleBeginMs - lastFlow > flowInterval) lastFlow = cycleBeginMs; // a big gap for some reason? - jump
+}
+
+static void processUiEvent(void) {
+    if(uiSetModified) {
+        prepareActualSettings(commReply);
+        sendUartCommand(Command_ReadSettings | CommandState_Event, commReply, 4);
+        uiSetModified = false;
+    }
 }
 
 // PD2, PD7
@@ -1227,7 +1260,7 @@ int main(void) {
 
     enable_irq();
     DISPLAYS_start();
-    sendUartCommand(Command_Startup, NULL, 0);
+    sendUartCommand(Command_Reboot | CommandState_Event, NULL, 0);
 
     startBooting();
 
@@ -1259,6 +1292,7 @@ int main(void) {
 
             processUartRx();
             processFlow();
+            processUiEvent();
             if(cycleBeginMs - lastUpdate >= 100) {
                 updateDisplays();
                 lastUpdate = cycleBeginMs;
