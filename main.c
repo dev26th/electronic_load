@@ -31,6 +31,11 @@
 #define LED_1   0x20
 #define LED_0   0x40
 
+#define ADC_CH_TEMP  0
+#define ADC_CH_MAIN  1
+#define ADC_CH_SENSE 2
+#define ADC_CH_SUP   3
+
 enum Mode {
     Mode_Booting,
     Mode_MenuFun,
@@ -55,6 +60,7 @@ static uint8_t  error;
 static volatile uint16_t uCurRaw;
 static volatile uint16_t uSenseRaw;
 static volatile uint16_t uSupRaw;
+static volatile bool     uSupRunning;
 static volatile uint16_t tempRaw;
 
 static uint16_t uSet;            // mV
@@ -209,9 +215,10 @@ void SYSTEMTIMER_onTick(void) {
 
 // ADC-cycle duration: ~515 us from start until return from onResult
 void SYSTEMTIMER_onTack(void) {
-    ADC_startScanCont(16);
+    //ADC_startScanCont(16);
 }
 
+/*
 // ~7 us
 void ADC_onResult(const uint16_t* res) {
     // FIXME possible optimizations:
@@ -225,6 +232,12 @@ void ADC_onResult(const uint16_t* res) {
     uCurRaw   = (uCurRaw   + 1) / 2 + res[1];
     uSenseRaw = (uSenseRaw + 1) / 2 + res[2];
     uSupRaw   = (uSupRaw   + 1) / 2 + res[3];
+}
+*/
+
+static void onResult_uSup(uint16_t res) {
+    uSupRaw = (uSupRaw + 1) / 2 + res;
+    uSupRunning = false;
 }
 
 // --------------------------------------------------------------------------------------------------------------------
@@ -292,6 +305,11 @@ static void stopBooting(void) {
 }
 
 static void doBooting(void) {
+    if(!uSupRunning) {
+        uSupRunning = true;
+        ADC_start(ADC_CH_SUP, 1, &onResult_uSup);
+    }
+
     if(cycleBeginMs >= 500) {
         if(uSupRaw < CFG->uSupMin) { // cannot be reset
             error |= ERROR_SUPPLY;

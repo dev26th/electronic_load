@@ -4,7 +4,7 @@
 void LOAD_init(void) {
     TIM1->PSCRH = 0;
     TIM1->PSCRL = 0;
-    TIM1->ARRH  = 0xFF;
+    TIM1->ARRH  = 0x7F;
     TIM1->ARRL  = 0xFF;
     TIM1->BKR   = TIM1_BKR_MOE;
     TIM1->CCMR1 = TIM1_CCMR1_OC1M_PWM1 | TIM1_CCMR1_OC1PE;
@@ -22,6 +22,7 @@ void LOAD_init(void) {
 }
 
 void LOAD_set(uint16_t v) {
+    v >>= 1; // FIXME move to the coef
     TIM1->CCR1H = v >> 8;
     TIM1->CCR1L = v & 0xFF;
     TIM1->EGR  |= TIM1_EGR_COMG;

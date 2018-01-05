@@ -5,11 +5,11 @@
 
 #include "stm8.h"
 
-void ADC_onResult(const uint16_t* res);
+typedef void (*ADC_onResult_t)(uint16_t res);
 
 void ADC_init(void);
 
-void ADC_startScanCont(uint8_t n);
+void ADC_start(uint8_t ch, uint8_t n, ADC_onResult_t onResult);
 
 void ADC_ADC1_eoc(void) __interrupt(IRQN_ADC1_EOC);
 
