@@ -149,8 +149,9 @@ void UART_process(void) {
     }
 }
 
+// ~ 5.5us
 void UART_UART2_rx(void) __interrupt(IRQN_UART2_RX) {
-    RINGBUFFER_addIfNotFull(UART2->DR);
-    UART2->SR = (uint8_t)~UART_SR_RXNE; // reset RXNE
+    (void)UART2->SR;                      // reset and ignore Overrun, if any
+    RINGBUFFER_addIfNotFull(UART2->DR);   // reset RXNE
 }
 

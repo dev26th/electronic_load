@@ -4,6 +4,7 @@
 #include "decoder.h"
 
 #include <QDialog>
+#include <QAbstractButton>
 
 namespace Ui {
 class ConfigDialog;
@@ -18,7 +19,15 @@ public:
     ~ConfigDialog();
 
 private slots:
-    void on_saveButton_clicked();
+    void on_buttonBox_accepted();
+
+    void on_buttonBox_clicked(QAbstractButton *button);
+
+signals:
+    void send(QByteArray data);
+
+private:
+    bool parseInput();
 
 private:
     Ui::ConfigDialog *ui;

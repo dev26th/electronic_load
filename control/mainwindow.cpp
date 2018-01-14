@@ -184,7 +184,13 @@ void MainWindow::setControlEnabled(bool state)
     ui->runButton->setEnabled(state);
     ui->menuService->setEnabled(state);
 
-    if(!state) {
+    if(state) {
+        bool showEnergy = (deviceConfigData.fun == 1);
+        ui->energyLabel->setVisible(showEnergy);
+        ui->energyBox->setVisible(showEnergy);
+        ui->energyResetButton->setVisible(showEnergy);
+    }
+    else {
         ui->energyLabel->setVisible(true);
         ui->energyBox->setVisible(true);
         ui->energyResetButton->setVisible(true);
@@ -513,10 +519,11 @@ void MainWindow::on_actionDeviceConfiguration_triggered()
 {
     CmdConfigData d = deviceConfigData;
     ConfigDialog * dialog = new ConfigDialog(this, d);
+    connect(dialog, &ConfigDialog::send, comm, &Comm::send);
     if(1 == dialog->exec()) {
-        d.cmd = Cmd::WriteConfig;
-        d.state = CmdState::Request;
-        emit send(formCmdData(d));
+        toExecute.enqueue(formCmdData(d));
+        toExecute.enqueue(formCmdData(Cmd::ReadConfig));
+        executeNext();
     }
 }
 

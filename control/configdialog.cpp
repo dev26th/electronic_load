@@ -60,7 +60,7 @@ static int parseInt(const QString& s)
     return res;
 }
 
-void ConfigDialog::on_saveButton_clicked()
+bool ConfigDialog::parseInput()
 {
     try {
         deviceConfigData.iSetCoef.offset = parseInt(ui->iSetCoefOffsetBox->text());
@@ -99,9 +99,28 @@ void ConfigDialog::on_saveButton_clicked()
         deviceConfigData.uSet = parseInt(ui->uSetBox->text());
         deviceConfigData.iSet = parseInt(ui->iSetBox->text());
 
-        accept();
+        deviceConfigData.cmd = Cmd::WriteConfig;
+        deviceConfigData.state = CmdState::Request;
+
+        return true;
     }
     catch(const QString& ex) {
         showError(QString("Cannot parse: %1").arg(ex));
+        return false;
+    }
+}
+
+void ConfigDialog::on_buttonBox_accepted()
+{
+    if(parseInput())
+        accept();
+}
+
+void ConfigDialog::on_buttonBox_clicked(QAbstractButton *button)
+{
+    if(button == (QAbstractButton*)(ui->buttonBox->button(QDialogButtonBox::Apply))) {
+        if(parseInput()) {
+            emit send(formCmdData(deviceConfigData));
+        }
     }
 }

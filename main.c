@@ -1011,6 +1011,7 @@ static void recalcConfigValues() {
 }
 
 static inline void initialState(void) {
+/*
     FLASH_unlockData();
 
     CFG->iSetCoef.offset   = 86;
@@ -1047,7 +1048,7 @@ static inline void initialState(void) {
 
     FLASH_waitData();
     FLASH_lockData();
-
+*/
     error       = 0;
     encoderMode = EncoderMode_I1;
     fanState    = FanState_Off;
@@ -1358,6 +1359,9 @@ int main(void) {
     BUTTON_init();
     DISPLAYS_init();
     initDebug();
+
+    ITC->SPR[3] = 0xF7; // set IRQN_TIM2_UP prio 1 - allow interrupt it because it can take a long time
+                        // (bits 26&27 => 0b01)
 
     enable_irq();
     DISPLAYS_start();

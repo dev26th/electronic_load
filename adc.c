@@ -22,7 +22,7 @@ void ADC_start(uint8_t ch, uint8_t n, ADC_onResult_t onResult) {
     _n = n;
     _countMax = 0;
     _countValue = 0;
-    for(i = 0; i < ADC_COUNTS_SIZE; ++i) _counts[i] = 0;
+    for(i = 0; i < ADC_COUNTS_SIZE; ++i) _counts[i] = 0; // 1108 us
 
     ADC1->CR3 &= ~ADC1_CR3_OVR;
     ADC1->CSR  = ADC1_CSR_EOCIE | _ch;
@@ -34,7 +34,7 @@ void ADC_start(uint8_t ch, uint8_t n, ADC_onResult_t onResult) {
 // ~7 us for non-last one
 void ADC_ADC1_eoc(void) __interrupt(IRQN_ADC1_EOC) {
     uint16_t v, c;
-    __asm BSET 0x500F, #7 __endasm;
+    __asm BSET 0x500F, #2 __endasm;
     ADC1->CSR = ADC1_CSR_EOCIE | _ch;
 
     v = ADC1->DRL | ((uint16_t)ADC1->DRH << 8);
@@ -48,6 +48,6 @@ void ADC_ADC1_eoc(void) __interrupt(IRQN_ADC1_EOC) {
     --_n;
     if(_n == 1) ADC1->CR1 &= ~ADC1_CR1_CONT;
     if(_n == 0) _onResult(_counts, _countMax, _countValue);
-    __asm BRES 0x500F, #7 __endasm;
+    __asm BRES 0x500F, #2 __endasm;
 }
 
