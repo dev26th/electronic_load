@@ -1,3 +1,5 @@
+// FIXME saving configuration via the control software - hangs?
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -36,6 +38,9 @@
 #define ADC_CH_SENSE 2
 #define ADC_CH_SUP   3
 
+#define ADC_N      250
+#define ADC_N_FAST 16
+
 enum Mode {
     Mode_Booting,
     Mode_MenuFun,
@@ -57,16 +62,17 @@ static enum Mode mode;
 #define ERROR_ERT      (1 << 4)
 static uint8_t  error;
 
-static volatile uint16_t uCurRaw;
-static volatile uint16_t uSenseRaw;
+static volatile uint32_t uMainRaw;
+static volatile uint32_t uSenseRaw;
 static volatile uint16_t uSupRaw;
 static volatile bool     uSupRunning;
 static volatile uint16_t tempRaw;
+static volatile uint8_t  tickCount;
 
 static uint16_t uSet;            // mV
 static uint16_t iSet;            // mA
 static uint32_t powLimit;        // uW
-static uint16_t uCur;            // mV
+static uint16_t uMain;           // mV
 static uint16_t uSense;          // mV
 static uint32_t cycleBeginMs;
 static bool uiSetModified;
@@ -133,7 +139,7 @@ struct ValueCoef {
 };
 struct Config {
     struct ValueCoef iSetCoef;
-    struct ValueCoef uCurCoef;
+    struct ValueCoef uMainCoef;
     struct ValueCoef uSenseCoef;
     uint16_t         uSupMin;       // raw
     uint16_t         tempThreshold;
@@ -148,7 +154,7 @@ struct Config {
     uint16_t         uSetMax;       // mV
     uint16_t         uSenseMin;     // mV
     uint16_t         uNegative;     // raw
-    uint16_t         uCurLimit;     // mV
+    uint16_t         uMainLimit;    // mV
     uint32_t         powLimit;      // mW
     uint32_t         ahMax;         // mAh
     uint32_t         whMax;         // mWh
@@ -200,6 +206,93 @@ enum CommandState {
 // --------------------------------------------------------------------------------------------------------------------
 // this functions are called in interrupt context
 
+// ~200 us
+static uint32_t countsToValue(const uint8_t* counts, uint8_t countMax, uint16_t countValue) {
+    uint32_t s1 = 0;
+    uint16_t s2 = 0;
+    int16_t i;
+
+    (void)countMax;
+
+    if(countValue == 0 || countValue == ADC_COUNTS_SIZE-1) return 0;
+
+    i = countValue-1;
+    s1 += (uint32_t)counts[i] * i;
+    s2 += counts[i];
+
+    i = countValue;
+    s1 += (uint32_t)counts[i] * i;
+    s2 += counts[i];
+
+    i = countValue+1;
+    s1 += (uint32_t)counts[i] * i;
+    s2 += counts[i];
+
+    s1 <<= 8;
+    s1 /= s2;
+
+    return s1;
+/*
+    uint32_t s1 = 0;
+    uint16_t s2 = 0;
+    int16_t i;
+
+    (void)countMax;
+
+    for(i = (int16_t)countValue - INTEGRATE_WIDTH/2; i <= countValue + INTEGRATE_WIDTH/2; ++i) {
+        if(i < 0 || i >= ADC_COUNTS_SIZE) continue;
+        s1 += (uint32_t)counts[i] * i;
+        s2 += counts[i];
+    }
+    s1 <<= 8;
+    s1 /= s2;
+
+    return s1;
+*/
+}
+
+static void onResult_temp(const uint8_t* counts, uint8_t countMax, uint16_t countValue) {
+    (void)counts; (void)countMax;
+
+    // with small quasi-FIR-filter
+    tempRaw = (tempRaw + 1) / 2 + countValue;
+}
+
+static void onResult_mainFast(const uint8_t* counts, uint8_t countMax, uint16_t countValue) {
+    (void)counts; (void)countMax;
+
+    uMainRaw = (uMainRaw + 1) / 2 + ((uint32_t)countValue << 8);
+    ADC_start(ADC_CH_TEMP, ADC_N_FAST, &onResult_temp);
+}
+
+static void onResult_senseFast(const uint8_t* counts, uint8_t countMax, uint16_t countValue) {
+    (void)counts; (void)countMax;
+
+    uSenseRaw = (uSenseRaw + 1) / 2 + ((uint32_t)countValue << 8);
+    ADC_start(ADC_CH_TEMP, ADC_N_FAST, &onResult_temp);
+}
+
+static void onResult_main(const uint8_t* counts, uint8_t countMax, uint16_t countValue) {
+    GPIOD->ODR |= GPIO_ODR_2;
+    uMainRaw = (uMainRaw + 1) / 2 + countsToValue(counts, countMax, countValue);
+    GPIOD->ODR &= ~GPIO_ODR_2;
+    ADC_start(ADC_CH_SENSE, ADC_N_FAST, &onResult_senseFast);
+}
+
+static void onResult_sense(const uint8_t* counts, uint8_t countMax, uint16_t countValue) {
+    GPIOD->ODR |= GPIO_ODR_2;
+    uSenseRaw = (uSenseRaw + 1) / 2 + countsToValue(counts, countMax, countValue);
+    GPIOD->ODR &= ~GPIO_ODR_2;
+    ADC_start(ADC_CH_MAIN, ADC_N_FAST, &onResult_mainFast);
+}
+
+static void onResult_uSup(const uint8_t* counts, uint8_t countMax, uint16_t countValue) {
+    (void)counts; (void)countMax;
+
+    uSupRaw = (uSupRaw + 1) / 2 + countValue;
+    uSupRunning = false;
+}
+
 // ~13 us
 void SYSTEMTIMER_onTick(void) {
     //GPIOD->ODR |= GPIO_ODR_7;
@@ -208,52 +301,41 @@ void SYSTEMTIMER_onTick(void) {
     BUTTON_cycle();
 
     ++sCount;
-    sSum += (conn4 ? uSenseRaw : uCurRaw);
+    sSum += (conn4 ? uSenseRaw : uMainRaw);
 
     //GPIOD->ODR &= ~GPIO_ODR_7;
 }
 
-// ADC-cycle duration: ~515 us from start until return from onResult
+// ~1100 us
 void SYSTEMTIMER_onTack(void) {
-    //ADC_startScanCont(16);
-}
-
-/*
-// ~7 us
-void ADC_onResult(const uint16_t* res) {
-    // FIXME possible optimizations:
-    //   - uSup must be checked only during startup
-    //   - temp may be checked seldom, e.g. once per tick
-    //   - both uCur and uSense together are required only on start of Fun2
-    // So, we can reduce this measurement e.g. 1 x temp and 16 x uCur (or uSense) each 1 ms.
-
-    // with small quasi-FIR-filter
-    tempRaw   = (tempRaw   + 1) / 2 + res[0];
-    uCurRaw   = (uCurRaw   + 1) / 2 + res[1];
-    uSenseRaw = (uSenseRaw + 1) / 2 + res[2];
-    uSupRaw   = (uSupRaw   + 1) / 2 + res[3];
-}
-*/
-
-static void onResult_uSup(uint16_t res) {
-    uSupRaw = (uSupRaw + 1) / 2 + res;
-    uSupRunning = false;
+    if(++tickCount == 50) {
+        // ADC-cycle duration: ~25 ms from start until return from last onResult.
+        // Start here the chain precision->fast->temp
+        // Do it 10 times per second
+        GPIOD->ODR |= GPIO_ODR_2;
+        tickCount = 0;
+        if(conn4)
+            ADC_start(ADC_CH_SENSE, ADC_N, &onResult_sense);
+        else
+            ADC_start(ADC_CH_MAIN, ADC_N, &onResult_main);
+        GPIOD->ODR &= ~GPIO_ODR_2;
+    }
 }
 
 // --------------------------------------------------------------------------------------------------------------------
 
-static uint16_t recalcValue(uint16_t raw, const struct ValueCoef* coef) {
+static uint16_t recalcValue(uint32_t raw, const struct ValueCoef* coef) {
     uint32_t v;
     if(raw < coef->offset) return 0;
     v = raw - coef->offset;
     v *= coef->mul;
-    v /= coef->div;
+    v >>= coef->div;
     if(v > UINT16_MAX) v = UINT16_MAX;
     return (uint16_t)v;
 }
 
 static void recalcValues(void) {
-    uCur   = recalcValue(uCurRaw,   &CFG->uCurCoef);
+    uMain  = recalcValue(uMainRaw,  &CFG->uMainCoef);
     uSense = recalcValue(uSenseRaw, &CFG->uSenseCoef);
 }
 
@@ -306,14 +388,14 @@ static void stopBooting(void) {
 
 static void doBooting(void) {
     if(!uSupRunning) {
-        uSupRunning = true;
-        ADC_start(ADC_CH_SUP, 1, &onResult_uSup);
-    }
-
-    if(cycleBeginMs >= 500) {
-        if(uSupRaw < CFG->uSupMin) { // cannot be reset
-            error |= ERROR_SUPPLY;
+        if(cycleBeginMs >= 500) {
+            if(uSupRaw < CFG->uSupMin) { // cannot be reset
+                error |= ERROR_SUPPLY;
+            }
         }
+
+        uSupRunning = true;
+        ADC_start(ADC_CH_SUP, ADC_N_FAST, &onResult_uSup);
     }
 
     if(cycleBeginMs >= 2000) {
@@ -350,6 +432,7 @@ static void startFun1(void) {
         encoderMode = EncoderMode_I0;
     updateISet();
     LOAD_start();
+    conn4 = false;
     fun1State.warning  = false;
     fun1State.flip     = false;
     fun1State.lastBeep = 0;
@@ -366,13 +449,13 @@ static void doFun1(void) {
         return;
     }
 
-    if((int32_t)uCur * iSet >= powLimit) {
-        iSet = (powLimit / uCur / 10) * 10;
+    if((int32_t)uMain * iSet >= powLimit) {
+        iSet = (powLimit / uMain / 10) * 10;
         uiSetModified = true;
         updateISet();
     }
 
-    if((uCur < uSet) || !LOAD_isStable()) {
+    if((uMain < uSet) || !LOAD_isStable()) {
         if((!fun1State.warning) || (cycleBeginMs - fun1State.lastBeep >= 500)) {
             BEEP_beep(BEEP_freq_1k, 52);
             fun1State.warning  = true;
@@ -394,7 +477,7 @@ static void startFun2(void) {
         encoderMode = EncoderMode_I0;
     updateISet();
     conn4 = (uSense > CFG->uSenseMin);
-    uCoef = (conn4 ? &CFG->uSenseCoef : &CFG->uCurCoef);
+    uCoef = (conn4 ? &CFG->uSenseCoef : &CFG->uMainCoef);
     fun2State.lastDisp = cycleBeginMs;
 }
 
@@ -435,6 +518,7 @@ static void startFun2Res(void) {
 static void stopFun2Res(void) {
     resetFun2();
     mode = Mode_Fun2;
+    conn4 = false;
 }
 
 static void doFun2Pre(void) {
@@ -454,15 +538,15 @@ static void doFun2(void) {
         return;
     }
 
-    fun2State.u = (conn4 ? uSense : uCur);
+    fun2State.u = (conn4 ? uSense : uMain);
 
     if((fun2State.u < uSet) || !LOAD_isStable()) {
         startFun2Warn();
         return;
     }
 
-    if((int32_t)uCur * iSet >= powLimit) {
-        iSet = (powLimit / uCur / 10) * 10;
+    if((int32_t)uMain * iSet >= powLimit) {
+        iSet = (powLimit / uMain / 10) * 10;
         uiSetModified = true;
         updateISet();
     }
@@ -484,7 +568,7 @@ static void doFun2(void) {
 
         wh = fun2State.sWh / (3600uL * 1000 * 1000 / 2);
         wh *= uCoef->mul;
-        wh /= uCoef->div;
+        wh >>= uCoef->div;
         if(wh > UINT32_MAX) wh = UINT32_MAX;
         fun2State.wh = (uint32_t)wh;
 
@@ -518,14 +602,14 @@ static inline void beepEncoderButton(void) {
 static inline void checkErrors(void) {
     uint16_t temp = tempRaw;
 
-    if(uCurRaw < CFG->uNegative || uSenseRaw < CFG->uNegative) {
+    if(uMainRaw < CFG->uNegative || uSenseRaw < CFG->uNegative) {
         error |= ERROR_POLARITY;
     }
     else {
         error &= ~ERROR_POLARITY;
     }
 
-    if(uCur >= CFG->uCurLimit) {
+    if(uMain >= CFG->uMainLimit) {
         error |= ERROR_OUP;
     }
     else {
@@ -863,7 +947,7 @@ static void updateDisplays(void) {
                 displayInt(iSet, 0, bufA);
                 bufALeds = encoderStateToLeds() | LED_V;
                 if(!fun1State.flip) bufALeds |= LED_RUN;
-                displayInt(uCur/10, 1, bufB);
+                displayInt((uMain + 5)/10, 1, bufB);
                 break;
 
             case Mode_Fun2Pre:
@@ -882,7 +966,7 @@ static void updateDisplays(void) {
                 bufALeds |= encoderStateToLeds();
                 switch(fun2State.disp) {
                     case DisplayedValue_V:
-                        displayInt(fun2State.u/10, 1, bufB);
+                        displayInt((fun2State.u + 5)/10, 1, bufB);
                         bufALeds |= LED_V;
                         break;
 
@@ -900,7 +984,7 @@ static void updateDisplays(void) {
 
             case Mode_Fun2Warn:
                 if(!fun2State.flip) {
-                    displayInt(fun2State.u/10, 1, bufB);
+                    displayInt((fun2State.u + 5)/10, 1, bufB);
                     bufALeds |= LED_V;
                 }
                 else {
@@ -927,44 +1011,43 @@ static void recalcConfigValues() {
 }
 
 static inline void initialState(void) {
-/*
     FLASH_unlockData();
 
-    CFG->iSetCoef.offset   = 66;
-    CFG->iSetCoef.mul      = 5329;
-    CFG->iSetCoef.div      = 1000;
+    CFG->iSetCoef.offset   = 86;
+    CFG->iSetCoef.mul      = 2700;
+    CFG->iSetCoef.div      = 10;
 
-    CFG->uCurCoef.offset   = 606;
-    CFG->uCurCoef.mul      = 30000;
-    CFG->uCurCoef.div      = 23912;
+    CFG->uMainCoef.offset  = 8630;
+    CFG->uMainCoef.mul     = 5117;
+    CFG->uMainCoef.div     = 16;
 
-    CFG->uSenseCoef.offset = 670;
-    CFG->uSenseCoef.mul    = 30000;
-    CFG->uSenseCoef.div    = 27215;
+    CFG->uSenseCoef.offset = 9790;
+    CFG->uSenseCoef.mul    = 4495;
+    CFG->uSenseCoef.div    = 16;
 
-    CFG->uSupMin           = 0x52A0; // ~10V
+    CFG->uSupMin           = 0x052A; // ~10V
 
-    CFG->tempThreshold     = 0x0200;
-    CFG->tempFanLow        = 0x3000;
-    CFG->tempFanMid        = 0x2800;
-    CFG->tempFanFull       = 0x2000;
-    CFG->tempLimit         = 0x1000;
-    CFG->tempDefect        = 0x6000;
+    CFG->tempThreshold     = 0x0020;
+    CFG->tempFanLow        = 0x0300;
+    CFG->tempFanMid        = 0x0280;
+    CFG->tempFanFull       = 0x0200;
+    CFG->tempLimit         = 0x0100;
+    CFG->tempDefect        = 0x0600;
 
-    CFG->iSetMin           =     200;
+    CFG->iSetMin           =     100; // FIXME reduce? but check signal quality
     CFG->iSetMax           =   10000;
-    CFG->uSetMin           =    1000;
+    CFG->uSetMin           =    1000; // FIXME reduce
     CFG->uSetMax           =   25000;
     CFG->uSenseMin         =      50;
-    CFG->uNegative         =     500;
-    CFG->uCurLimit         =   31000;
+    CFG->uNegative         =    6000;
+    CFG->uMainLimit        =   31000;
     CFG->powLimit          =   60000uL;
     CFG->ahMax             =  999900uL;
     CFG->whMax             = 9999000uL;
 
     FLASH_waitData();
     FLASH_lockData();
-*/
+
     error       = 0;
     encoderMode = EncoderMode_I1;
     fanState    = FanState_Off;
@@ -1024,7 +1107,7 @@ static void commitUartCommand(uint8_t cmd) {
 static void prepareActualState(uint8_t* buf) {
     *(buf + 0) = (uint8_t)mode;
     *(buf + 1) = error;
-    *(uint16_t*)(buf + 2) = uCur;
+    *(uint16_t*)(buf + 2) = uMain;
     *(uint16_t*)(buf + 4) = uSense;
     *(uint16_t*)(buf + 6) = tempRaw;
     *(uint16_t*)(buf + 8) = uSupRaw;
@@ -1158,11 +1241,11 @@ static void processUartCommand(const uint8_t* buf, uint8_t size) {
 
         case Command_ReadRaw:
             if(size == 1) {
-                uint16_t* u1 = commReply;
-                uint16_t* u2 = commReply + 2;
-                *u1 = uCurRaw;
+                uint32_t* u1 = commReply;
+                uint32_t* u2 = commReply + 4;
+                *u1 = uMainRaw;
                 *u2 = uSenseRaw;
-                sendUartCommand(Command_ReadRaw | CommandState_Response, commReply, 4);
+                sendUartCommand(Command_ReadRaw | CommandState_Response, commReply, 8);
             }
             break;
 
@@ -1323,12 +1406,14 @@ int main(void) {
                     //UART_writeHexU8(mode);
                     //UART_write(" temp=");
                     //UART_writeHexU16(tempRaw);
-                    //UART_write(" uCurRaw=");
-                    //UART_writeHexU16(uCurRaw);
-                    //UART_write(" uCur=");
-                    //UART_writeDecU32(uCur);
+                    //UART_write(" conn4=");
+                    //UART_writeHexU8(conn4);
+                    //UART_write(" uMainRaw=");
+                    //UART_writeHexU32(uMainRaw);
+                    //UART_write(" uMain=");
+                    //UART_writeDecU32(uMain);
                     //UART_write(" uSenseRaw=");
-                    //UART_writeHexU16(uSenseRaw);
+                    //UART_writeHexU32(uSenseRaw);
                     //UART_write(" uSense=");
                     //UART_writeDecU32(uSense);
                     //UART_write(" uSup=");

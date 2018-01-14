@@ -5,7 +5,9 @@
 
 #include "stm8.h"
 
-typedef void (*ADC_onResult_t)(uint16_t res);
+#define ADC_COUNTS_SIZE 1024
+
+typedef void (*ADC_onResult_t)(const uint8_t* counts, uint8_t countMax, uint16_t countValue);
 
 void ADC_init(void);
 

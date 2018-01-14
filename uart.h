@@ -33,6 +33,8 @@ void UART_writeHexU16(uint16_t v);
 
 void UART_writeHexU32(uint32_t v);
 
+void UART_writeDecU16(uint16_t v);
+
 void UART_writeDecU32(uint32_t v);
 
 void UART_writeDecU64(uint64_t v, uint8_t n);

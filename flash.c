@@ -14,6 +14,12 @@ void FLASH_unlockData(void) {
     FLASH->DUKR = FLASH_KEY2;
     FLASH->DUKR = FLASH_KEY1;
     while(!(FLASH->IAPSR & FLASH_IAPSR_DUL));
+
+    // FIXME without this dummy delay first 4 bytes of EEPROM are written as zero sometimes
+    {
+        volatile uint16_t i;
+        for(i = 0; i < 10000; ++i) {}
+    }
 }
 
 void FLASH_waitData(void) {
