@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Installer>
+    <Name>Electronic Load Control</Name>
+    <Version>1.0.0</Version>
+    <Title>Electronic Load Control</Title>
+    <Publisher>Anatoli Klassen</Publisher>
+    <StartMenuDir>Electronic Load Control</StartMenuDir>
+    <TargetDir>@ApplicationsDir@/Electronic Load Control</TargetDir>
+</Installer>

@@ -1,0 +1,445 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ConfigDialog</class>
+ <widget class="QDialog" name="ConfigDialog">
+  <property name="windowModality">
+   <enum>Qt::ApplicationModal</enum>
+  </property>
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>456</width>
+    <height>462</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Device Configuration</string>
+  </property>
+  <layout class="QGridLayout" name="gridLayout_5">
+   <item row="1" column="1">
+    <widget class="QPushButton" name="saveButton">
+     <property name="text">
+      <string>Save</string>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="0" colspan="4">
+    <widget class="QScrollArea" name="scrollArea">
+     <property name="widgetResizable">
+      <bool>true</bool>
+     </property>
+     <widget class="QWidget" name="scrollAreaWidgetContents">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>419</width>
+        <height>924</height>
+       </rect>
+      </property>
+      <layout class="QGridLayout" name="gridLayout">
+       <item row="6" column="0">
+        <widget class="QLabel" name="iSetMinLabel">
+         <property name="text">
+          <string>I-Set Minimum, mA</string>
+         </property>
+        </widget>
+       </item>
+       <item row="4" column="1">
+        <widget class="QLineEdit" name="uSupMinBox">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+           <horstretch>1</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+        </widget>
+       </item>
+       <item row="4" column="0">
+        <widget class="QLabel" name="uSupMinLabel">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="text">
+          <string>U-Supply Minimum, raw</string>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="0" colspan="2">
+        <widget class="QGroupBox" name="iSetCoefBox">
+         <property name="title">
+          <string>I-Coefficients</string>
+         </property>
+         <layout class="QGridLayout" name="gridLayout_2">
+          <item row="3" column="0">
+           <widget class="QLabel" name="iSetCoefDivLabel">
+            <property name="text">
+             <string>Divider</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="0">
+           <widget class="QLabel" name="iSetCoefOffsetLabel">
+            <property name="text">
+             <string>Offset</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="2">
+           <widget class="QLineEdit" name="iSetCoefOffsetBox"/>
+          </item>
+          <item row="1" column="2">
+           <widget class="QLineEdit" name="iSetCoefMulBox"/>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="iSetCoefMulLabel">
+            <property name="text">
+             <string>Multiplier</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="2">
+           <widget class="QLineEdit" name="iSetCoefDivBox"/>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item row="2" column="0" colspan="2">
+        <widget class="QGroupBox" name="uSenseCoefBox">
+         <property name="title">
+          <string>U-Sense-Coefficients</string>
+         </property>
+         <layout class="QGridLayout" name="gridLayout_4">
+          <item row="3" column="0">
+           <widget class="QLabel" name="uSenseCoefDivLabel">
+            <property name="text">
+             <string>Divider</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="0">
+           <widget class="QLabel" name="uSenseCoefOffsetLabel">
+            <property name="text">
+             <string>Offset</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="2">
+           <widget class="QLineEdit" name="uSenseCoefOffsetBox"/>
+          </item>
+          <item row="1" column="2">
+           <widget class="QLineEdit" name="uSenseCoefMulBox"/>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="uSenseCoefMulLabel">
+            <property name="text">
+             <string>Multiplier</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="2">
+           <widget class="QLineEdit" name="uSenseCoefDivBox"/>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item row="1" column="0" colspan="2">
+        <widget class="QGroupBox" name="uCurCoefBox">
+         <property name="title">
+          <string>U-Main-Coefficients</string>
+         </property>
+         <layout class="QGridLayout" name="gridLayout_3">
+          <item row="3" column="0">
+           <widget class="QLabel" name="uCurCoefDivLabel">
+            <property name="text">
+             <string>Divider</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="0">
+           <widget class="QLabel" name="uCurCoefOffsetLabel">
+            <property name="text">
+             <string>Offset</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="2">
+           <widget class="QLineEdit" name="uCurCoefOffsetBox"/>
+          </item>
+          <item row="1" column="2">
+           <widget class="QLineEdit" name="uCurCoefMulBox"/>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="uCurCoefMulLabel">
+            <property name="text">
+             <string>Multiplier</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="2">
+           <widget class="QLineEdit" name="uCurCoefDivBox"/>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item row="8" column="1">
+        <widget class="QLineEdit" name="uSetMinBox"/>
+       </item>
+       <item row="9" column="1">
+        <widget class="QLineEdit" name="uSetMaxBox"/>
+       </item>
+       <item row="10" column="1">
+        <widget class="QLineEdit" name="uSenseMinBox"/>
+       </item>
+       <item row="12" column="0">
+        <widget class="QLabel" name="uCurLimitLabel">
+         <property name="text">
+          <string>U-Limit, mV</string>
+         </property>
+        </widget>
+       </item>
+       <item row="13" column="0">
+        <widget class="QLabel" name="powLimitLabel">
+         <property name="text">
+          <string>Power Limit, mW</string>
+         </property>
+        </widget>
+       </item>
+       <item row="15" column="0">
+        <widget class="QLabel" name="whMaxLabel">
+         <property name="text">
+          <string>Wh Maximum, mWh</string>
+         </property>
+        </widget>
+       </item>
+       <item row="16" column="0">
+        <widget class="QLabel" name="funLabel">
+         <property name="text">
+          <string>Function</string>
+         </property>
+        </widget>
+       </item>
+       <item row="17" column="0">
+        <widget class="QLabel" name="beepOnLabel">
+         <property name="text">
+          <string>Sound</string>
+         </property>
+        </widget>
+       </item>
+       <item row="18" column="0">
+        <widget class="QLabel" name="uSetLabel">
+         <property name="text">
+          <string>U-Set, mA</string>
+         </property>
+        </widget>
+       </item>
+       <item row="6" column="1">
+        <widget class="QLineEdit" name="iSetMinBox"/>
+       </item>
+       <item row="3" column="0" colspan="2">
+        <widget class="QGroupBox" name="temperatureBox">
+         <property name="title">
+          <string>Temperature, raw</string>
+         </property>
+         <layout class="QGridLayout" name="gridLayout_6">
+          <item row="2" column="0">
+           <widget class="QLabel" name="tempFanFullLabel">
+            <property name="text">
+             <string>Fan Full</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="0">
+           <widget class="QLabel" name="tempLimitLabel">
+            <property name="text">
+             <string>Limit</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="0">
+           <widget class="QLabel" name="tempDefectLabel">
+            <property name="text">
+             <string>Sensor Defect</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="0">
+           <widget class="QLabel" name="tempFanLowLabel">
+            <property name="text">
+             <string>Fan Low</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QLineEdit" name="tempFanLowBox"/>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="tempFanMidLabel">
+            <property name="text">
+             <string>Fan Middle</string>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="0">
+           <widget class="QLabel" name="tempThresholdLabel">
+            <property name="text">
+             <string>Threshold</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QLineEdit" name="tempFanMidBox"/>
+          </item>
+          <item row="2" column="1">
+           <widget class="QLineEdit" name="tempFanFullBox"/>
+          </item>
+          <item row="3" column="1">
+           <widget class="QLineEdit" name="tempLimitBox"/>
+          </item>
+          <item row="4" column="1">
+           <widget class="QLineEdit" name="tempDefectBox"/>
+          </item>
+          <item row="5" column="1">
+           <widget class="QLineEdit" name="tempThresholdBox"/>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item row="7" column="1">
+        <widget class="QLineEdit" name="iSetMaxBox"/>
+       </item>
+       <item row="11" column="0">
+        <widget class="QLabel" name="uNegativeLabel">
+         <property name="text">
+          <string>U-Negative, raw</string>
+         </property>
+        </widget>
+       </item>
+       <item row="8" column="0">
+        <widget class="QLabel" name="uSetMinLabel">
+         <property name="text">
+          <string>U-Set Minimum, mV</string>
+         </property>
+        </widget>
+       </item>
+       <item row="7" column="0">
+        <widget class="QLabel" name="iSetMaxLabel">
+         <property name="text">
+          <string>I-Set Maximum, mA</string>
+         </property>
+        </widget>
+       </item>
+       <item row="9" column="0">
+        <widget class="QLabel" name="uSetMaxLabel">
+         <property name="text">
+          <string>U-Set Maximum, mV</string>
+         </property>
+        </widget>
+       </item>
+       <item row="10" column="0">
+        <widget class="QLabel" name="uSenseMinLabel">
+         <property name="text">
+          <string>U-Sense Minimum, mV</string>
+         </property>
+        </widget>
+       </item>
+       <item row="14" column="0">
+        <widget class="QLabel" name="ahMaxLabel">
+         <property name="text">
+          <string>Ah Maximum, mAh</string>
+         </property>
+        </widget>
+       </item>
+       <item row="19" column="0">
+        <widget class="QLabel" name="iSetLabel">
+         <property name="text">
+          <string>I-Set, mA</string>
+         </property>
+        </widget>
+       </item>
+       <item row="11" column="1">
+        <widget class="QLineEdit" name="uNegativeBox"/>
+       </item>
+       <item row="12" column="1">
+        <widget class="QLineEdit" name="uCurLimitBox"/>
+       </item>
+       <item row="13" column="1">
+        <widget class="QLineEdit" name="powLimitBox"/>
+       </item>
+       <item row="14" column="1">
+        <widget class="QLineEdit" name="ahMaxBox"/>
+       </item>
+       <item row="15" column="1">
+        <widget class="QLineEdit" name="whMaxBox"/>
+       </item>
+       <item row="16" column="1">
+        <widget class="QLineEdit" name="funBox"/>
+       </item>
+       <item row="17" column="1">
+        <widget class="QLineEdit" name="beepOnBox"/>
+       </item>
+       <item row="18" column="1">
+        <widget class="QLineEdit" name="uSetBox"/>
+       </item>
+       <item row="19" column="1">
+        <widget class="QLineEdit" name="iSetBox"/>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+   <item row="1" column="0">
+    <spacer name="horizontalSpacer">
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>40</width>
+       <height>20</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+   <item row="1" column="2">
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>rejected()</signal>
+   <receiver>ConfigDialog</receiver>
+   <slot>close()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>403</x>
+     <y>441</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>227</x>
+     <y>230</y>
+    </hint>
+   </hints>
+  </connection>
+ </connections>
+</ui>
