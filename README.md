@@ -1,5 +1,7 @@
 # Electronic Load
-Reinvented firmware for the electronic load 60W. Status: **beta**.
+Reinvented firmware for the electronic load 60W. With PC control Software (Windows/Linux).
+
+Status: **beta**.
 
 The load can be ordered from China (AliExpress, eBay etc), something like this one:
 
