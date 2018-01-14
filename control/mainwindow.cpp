@@ -303,7 +303,7 @@ static bool saveStorageToCsvFile(const SampleStorage &storage, QFile &file)
 void MainWindow::on_actionSaveLog_triggered()
 {
     QString fileName = QFileDialog::getSaveFileName(this,
-        "Save Log", QString(), "CSV tables (*.csv);;Test files (*.txt);;All files (*.*)");
+        "Save Log", QString(), "CSV tables (*.csv);;Test files (*.txt);;All files (*)");
     if(fileName.isEmpty()) return;
 
     QFile file(fileName);

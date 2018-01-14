@@ -1036,7 +1036,7 @@ static inline void initialState(void) {
 
     CFG->iSetMin           =     100; // FIXME reduce? but check signal quality
     CFG->iSetMax           =   10000;
-    CFG->uSetMin           =    1000; // FIXME reduce
+    CFG->uSetMin           =     100;
     CFG->uSetMax           =   25000;
     CFG->uSenseMin         =      50;
     CFG->uNegative         =    6000;
