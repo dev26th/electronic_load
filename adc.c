@@ -16,13 +16,23 @@ void ADC_init(void) {
 }
 
 void ADC_start(uint8_t ch, uint8_t n, ADC_onResult_t onResult) {
-    uint16_t i;
     _onResult = onResult;
     _ch = ch;
     _n = n;
     _countMax = 0;
     _countValue = 0;
-    for(i = 0; i < ADC_COUNTS_SIZE; ++i) _counts[i] = 0; // 1108 us
+
+    // the same as:
+    //   for(i = 0; i < ADC_COUNTS_SIZE; ++i) _counts[i] = 0; // 1108 us
+    // but 515 us
+    __asm
+        LDW     x, #__counts
+    00001$:
+        CLR     (x)
+        INCW    x
+        CPW     x, #__counts+ADC_COUNTS_SIZE
+        JRULT   00001$
+    __endasm;
 
     ADC1->CR3 &= ~ADC1_CR3_OVR;
     ADC1->CSR  = ADC1_CSR_EOCIE | _ch;

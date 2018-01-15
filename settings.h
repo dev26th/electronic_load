@@ -3,7 +3,6 @@
 
 #define STM8S105
 #define CPU_F    12000000ul
-#define BAUD     19200     // FIXME 115200 doesn't work for long commands, e.g. Command_WriteCal
-                           //       looks like it interferences with ADC-interrupts
+#define BAUD     115200
 
 #endif // _SETTINGS_H_

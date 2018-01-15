@@ -306,7 +306,7 @@ void SYSTEMTIMER_onTick(void) {
     //GPIOD->ODR &= ~GPIO_ODR_7;
 }
 
-// ~1100 us
+// 517 us in worst case
 void SYSTEMTIMER_onTack(void) {
     if(++tickCount == 50) {
         // ADC-cycle duration: ~25 ms from start until return from last onResult.
@@ -1345,6 +1345,12 @@ static void initDebug(void) {
     // __asm BRES 0x500F, #2 __endasm
 }
 
+static void setIrqPrio(uint8_t irqN, uint8_t prio) {
+    uint8_t p = (irqN % 4) * 2;
+    uint8_t v = (~(0x03 << p)) | (prio << p);
+    ITC->SPR[irqN / 4] = v;
+}
+
 int main(void) {
     SYSTEM_toHseClock();
     initialState();
@@ -1360,8 +1366,9 @@ int main(void) {
     DISPLAYS_init();
     initDebug();
 
-    ITC->SPR[3] = 0xF7; // set IRQN_TIM2_UP prio 1 - allow interrupt it because it can take a long time
-                        // (bits 26&27 => 0b01)
+    // allow interrupts, where ADC_start can be started, to be interrupted because ADC_start takes a long time
+    setIrqPrio(IRQN_TIM2_UP, 1);
+    setIrqPrio(IRQN_ADC1_EOC, 1);
 
     enable_irq();
     DISPLAYS_start();
