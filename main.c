@@ -1,5 +1,3 @@
-// FIXME saving configuration via the control software - hangs?
-
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -1035,7 +1033,7 @@ static inline void initialState(void) {
     CFG->tempLimit         = 0x0100;
     CFG->tempDefect        = 0x0600;
 
-    CFG->iSetMin           =     100; // FIXME reduce? but check signal quality
+    CFG->iSetMin           =     100;
     CFG->iSetMax           =   10000;
     CFG->uSetMin           =     100;
     CFG->uSetMax           =   25000;
