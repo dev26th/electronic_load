@@ -21,7 +21,7 @@ void Comm::portConnect(QString portName)
     if(ser->isOpen()) portDisconnect();
 
     ser->setPortName(portName);
-    ser->setBaudRate(19200);
+    ser->setBaudRate(115200);
 
     bool openSuccess = ser->open(QIODevice::ReadWrite);
     if(!openSuccess)
