@@ -1537,11 +1537,18 @@ static void prepareActualSettings(uint8_t* buf) {
     buf[3] = (uint8_t)iSet;
 }
 
+static void resetDevice(void) {
+    IWDG->KR = IWDG_KR_KEY_ENABLE;
+    while(true) {}
+}
+
 static void processUartCommand(const uint8_t* buf, uint8_t size) {
     switch(buf[0]) {
-        case Command_Reboot: // FIXME
+        case Command_Reboot:
             if(size == 1) {
                 commitUartCommand(buf[0]);
+                SYSTEMTIMER_delayMs(1); // let the reply time to be transfered
+                resetDevice();
             }
             break;
 
@@ -1782,9 +1789,6 @@ int main(void) {
     sendUartCommand(Command_Reboot | CommandState_Event, NULL, 0);
 
     startBooting();
-
-    calcCal(300uL, 6400uL, 197uL, 2501uL, &CFG->iSetCoef);
-    calcCal(197uL, 2501uL, 300uL, 6400uL, &CFG->iSetCoef);
 
     {
         uint32_t lastDump   = SYSTEMTIMER_ms;
