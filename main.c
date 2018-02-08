@@ -43,6 +43,14 @@ enum Mode {
     Mode_Booting,
     Mode_MenuFun,
     Mode_MenuBeep,
+    Mode_MenuCalV,
+    Mode_MenuCalI,
+    Mode_CalV1,
+    Mode_CalV2,
+    Mode_CalI1r,
+    Mode_CalI1v,
+    Mode_CalI2r,
+    Mode_CalI2v,
     Mode_Fun1,
     Mode_Fun1Run,
     Mode_Fun2,
@@ -53,17 +61,28 @@ enum Mode {
 };
 static enum Mode mode;
 
+enum AdcMode {
+    AdcMode_None,
+    AdcMode_Normal,
+    AdcMode_Sup,
+    AdcMode_Cal1First,
+    AdcMode_Cal1Sec,
+    AdcMode_Cal2First,
+    AdcMode_Cal2Sec,
+};
+static volatile enum AdcMode adcMode;
+
 #define ERROR_POLARITY (1 << 0)
 #define ERROR_SUPPLY   (1 << 1)
 #define ERROR_OUP      (1 << 2)
 #define ERROR_OTP      (1 << 3)
 #define ERROR_ERT      (1 << 4)
+#define ERROR_CAL      (1 << 5)
 static uint8_t  error;
 
 static volatile uint32_t uMainRaw;
 static volatile uint32_t uSenseRaw;
 static volatile uint16_t uSupRaw;
-static volatile bool     uSupRunning;
 static volatile uint16_t tempRaw;
 static volatile uint8_t  tickCount;
 
@@ -81,6 +100,13 @@ static volatile uint8_t  sCount;
 static          uint8_t  sCountCopy;
 static volatile uint32_t sSum;       // raw
 static          uint32_t sSumCopy;   // raw
+
+static uint16_t cal1Disp;
+static uint32_t cal1First;
+static uint32_t cal1Sec;
+static uint16_t cal2Disp;
+static uint32_t cal2First;
+static uint32_t cal2Sec;
 
 struct MenuState {
     uint8_t fun;
@@ -271,16 +297,12 @@ static void onResult_senseFast(const uint8_t* counts, uint8_t countMax, uint16_t
 }
 
 static void onResult_main(const uint8_t* counts, uint8_t countMax, uint16_t countValue) {
-    GPIOD->ODR |= GPIO_ODR_2;
     uMainRaw = (uMainRaw + 1) / 2 + countsToValue(counts, countMax, countValue);
-    GPIOD->ODR &= ~GPIO_ODR_2;
     ADC_start(ADC_CH_SENSE, ADC_N_FAST, &onResult_senseFast);
 }
 
 static void onResult_sense(const uint8_t* counts, uint8_t countMax, uint16_t countValue) {
-    GPIOD->ODR |= GPIO_ODR_2;
     uSenseRaw = (uSenseRaw + 1) / 2 + countsToValue(counts, countMax, countValue);
-    GPIOD->ODR &= ~GPIO_ODR_2;
     ADC_start(ADC_CH_MAIN, ADC_N_FAST, &onResult_mainFast);
 }
 
@@ -288,7 +310,22 @@ static void onResult_uSup(const uint8_t* counts, uint8_t countMax, uint16_t coun
     (void)counts; (void)countMax;
 
     uSupRaw = (uSupRaw + 1) / 2 + countValue;
-    uSupRunning = false;
+}
+
+static void onResult_cal1First(const uint8_t* counts, uint8_t countMax, uint16_t countValue) {
+    cal1First = (cal1First + 1) / 2 + countsToValue(counts, countMax, countValue);
+}
+
+static void onResult_cal1Sec(const uint8_t* counts, uint8_t countMax, uint16_t countValue) {
+    cal1Sec = (cal1Sec + 1) / 2 + countsToValue(counts, countMax, countValue);
+}
+
+static void onResult_cal2First(const uint8_t* counts, uint8_t countMax, uint16_t countValue) {
+    cal2First = (cal2First + 1) / 2 + countsToValue(counts, countMax, countValue);
+}
+
+static void onResult_cal2Sec(const uint8_t* counts, uint8_t countMax, uint16_t countValue) {
+    cal2Sec = (cal2Sec + 1) / 2 + countsToValue(counts, countMax, countValue);
 }
 
 // ~13 us
@@ -310,13 +347,45 @@ void SYSTEMTIMER_onTack(void) {
         // ADC-cycle duration: ~25 ms from start until return from last onResult.
         // Start here the chain precision->fast->temp
         // Do it 10 times per second
-        GPIOD->ODR |= GPIO_ODR_2;
+        //GPIOD->ODR |= GPIO_ODR_2;
         tickCount = 0;
-        if(conn4)
-            ADC_start(ADC_CH_SENSE, ADC_N, &onResult_sense);
-        else
-            ADC_start(ADC_CH_MAIN, ADC_N, &onResult_main);
-        GPIOD->ODR &= ~GPIO_ODR_2;
+        if(AdcMode_Normal == adcMode) {
+            if(conn4)
+                ADC_start(ADC_CH_SENSE, ADC_N, &onResult_sense);
+            else
+                ADC_start(ADC_CH_MAIN, ADC_N, &onResult_main);
+        }
+        else {
+            switch(adcMode) {
+                case AdcMode_Sup:
+                    ADC_start(ADC_CH_SUP, ADC_N_FAST, &onResult_uSup);
+                    break;
+
+                case AdcMode_Cal1First:
+                    ADC_start(ADC_CH_MAIN, ADC_N, &onResult_cal1First);
+                    adcMode = AdcMode_Cal1Sec;
+                    break;
+
+                case AdcMode_Cal1Sec:
+                    ADC_start(ADC_CH_SENSE, ADC_N, &onResult_cal1Sec);
+                    adcMode = AdcMode_Cal1First;
+                    break;
+
+                case AdcMode_Cal2First:
+                    ADC_start(ADC_CH_MAIN, ADC_N, &onResult_cal2First);
+                    adcMode = AdcMode_Cal2Sec;
+                    break;
+
+                case AdcMode_Cal2Sec:
+                    ADC_start(ADC_CH_SENSE, ADC_N, &onResult_cal2Sec);
+                    adcMode = AdcMode_Cal2First;
+                    break;
+
+                default:
+                    ;
+            }
+        }
+        //GPIOD->ODR &= ~GPIO_ODR_2;
     }
 }
 
@@ -356,22 +425,50 @@ static void loadMenuSettings(void) {
     menuState.beep = CFG->beepOn;
 }
 
+static inline void beepButton(void) {
+    if(CFG->beepOn) BEEP_beep(BEEP_freq_1k, 100);
+}
+
+static inline void beepEncoder(void) {
+    if(CFG->beepOn) BEEP_beep(BEEP_freq_1k, 2);
+}
+
+static inline void beepEncoderButton(void) {
+    if(CFG->beepOn) BEEP_beep(BEEP_freq_1k, 10);
+}
+
+static inline void beepError(void) {
+    if(CFG->beepOn) BEEP_beep(BEEP_freq_4k, 500);
+}
+
+static void prepareFun(void) {
+    // init with minimal allowed values to avoid error message just after start
+    uMainRaw  = CFG->uNegative;
+    uSenseRaw = CFG->uNegative;
+    tempRaw   = CFG->tempLimit;
+
+    mode = (CFG->fun == 0) ? Mode_Fun1 : Mode_Fun2;
+    adcMode = AdcMode_Normal;
+}
+
 static void startMenu(void) {
+    if(CFG->beepOn) BEEP_beep(BEEP_freq_1k, 500);
     mode = Mode_MenuFun;
     loadMenuSettings();
 }
 
 static void stopMenu(void) {
     saveMenuSettings();
-    mode = (CFG->fun == 0) ? Mode_Fun1 : Mode_Fun2;
+    prepareFun();
 }
 
 static void startBooting(void) {
     mode = Mode_Booting;
+    adcMode = AdcMode_Sup;
 
     fanState = FanState_Override;
     FAN_set(100);
-    BEEP_beep(BEEP_freq_1k, 250);
+    if(CFG->beepOn) BEEP_beep(BEEP_freq_1k, 250);
 }
 
 static void stopBooting(void) {
@@ -381,19 +478,14 @@ static void stopBooting(void) {
     if(BUTTON_isPressed())
         startMenu();
     else
-        mode = (CFG->fun == 0) ? Mode_Fun1 : Mode_Fun2;
+        prepareFun();
 }
 
 static void doBooting(void) {
-    if(!uSupRunning) {
-        if(cycleBeginMs >= 500) {
-            if(uSupRaw < CFG->uSupMin) { // cannot be reset
-                error |= ERROR_SUPPLY;
-            }
+    if(cycleBeginMs >= 500) {
+        if(uSupRaw < CFG->uSupMin) { // cannot be reset
+            error |= ERROR_SUPPLY;
         }
-
-        uSupRunning = true;
-        ADC_start(ADC_CH_SUP, ADC_N_FAST, &onResult_uSup);
     }
 
     if(cycleBeginMs >= 2000) {
@@ -455,7 +547,7 @@ static void doFun1(void) {
 
     if((uMain < uSet) || !LOAD_isStable()) {
         if((!fun1State.warning) || (cycleBeginMs - fun1State.lastBeep >= 500)) {
-            BEEP_beep(BEEP_freq_1k, 52);
+            if(CFG->beepOn) BEEP_beep(BEEP_freq_1k, 52);
             fun1State.warning  = true;
             fun1State.flip     = !fun1State.flip;
             fun1State.lastBeep = cycleBeginMs;
@@ -579,26 +671,16 @@ static void doFun2(void) {
 
 static void doFun2Warn(void) {
     if(cycleBeginMs - fun2State.lastBeep >= 100) {
-        BEEP_beep(BEEP_freq_1k, 40);
+        if(CFG->beepOn) BEEP_beep(BEEP_freq_1k, 40);
         fun2State.flip     = !fun2State.flip;
         fun2State.lastBeep = cycleBeginMs;
     }
 }
 
-static inline void beepButton(void) {
-    if(CFG->beepOn) BEEP_beep(BEEP_freq_1k, 100);
-}
-
-static inline void beepEncoder(void) {
-    if(CFG->beepOn) BEEP_beep(BEEP_freq_1k, 2);
-}
-
-static inline void beepEncoderButton(void) {
-    if(CFG->beepOn) BEEP_beep(BEEP_freq_1k, 10);
-}
-
 static inline void checkErrors(void) {
     uint16_t temp = tempRaw;
+    uint32_t v1 = uMainRaw, v2 = uSenseRaw;
+    uint8_t exist = error;
 
     if(uMainRaw < CFG->uNegative || uSenseRaw < CFG->uNegative) {
         error |= ERROR_POLARITY;
@@ -618,12 +700,15 @@ static inline void checkErrors(void) {
         error |= ERROR_ERT;
     }
 
-    if(temp <= CFG->tempLimit) {
+    if(temp < CFG->tempLimit) {
         error |= ERROR_OTP;
     }
     else {
         error &= ~ERROR_OTP;
     }
+
+    if(!exist && error)
+        beepError();
 }
 
 static inline void controlFan(void) {
@@ -680,10 +765,33 @@ void BUTTON_onRelease(bool longpress) {
 
         case Mode_MenuFun:
             mode = Mode_MenuBeep;
+            beepButton();
             break;
 
         case Mode_MenuBeep:
+            mode = Mode_MenuCalV;
+            beepButton();
+            break;
+
+        case Mode_MenuCalV:
+            mode = Mode_MenuCalI;
+            beepButton();
+            break;
+
+        case Mode_CalV1:
+        case Mode_CalV2:
+        case Mode_CalI1r:
+        case Mode_CalI1v:
+        case Mode_CalI2r:
+        case Mode_CalI2v:
+            adcMode = AdcMode_None;
+            LOAD_stop();
+            LOAD_set(0);
+            // fallthrough
+
+        case Mode_MenuCalI:
             stopMenu();
+            beepButton();
             break;
 
         case Mode_Fun1:
@@ -734,7 +842,19 @@ static void updateValue(uint16_t* v, int16_t d, uint16_t min, uint16_t max) {
     }
 }
 
+static void updateCalValue(uint16_t* v, int16_t d, uint16_t min, uint16_t max) {
+    switch(encoderMode) {
+        case EncoderMode_I1: updateValue(v, 100*d, min, max); break;
+        case EncoderMode_I0: updateValue(v,     d, min, max); break;
+        case EncoderMode_U1: updateValue(v, 100*d, min, max); break;
+        case EncoderMode_U0: updateValue(v,     d, min, max); break;
+    }
+    beepEncoder();
+}
+
 void ENCODER_onChange(int8_t d) {
+    uint16_t t;
+
     if(error) return;
     if(inputDisable & INPUT_DISABLE_ENCODER) return;
 
@@ -744,10 +864,46 @@ void ENCODER_onChange(int8_t d) {
 
         case Mode_MenuFun:
             menuState.fun = (menuState.fun + 1) % 2;
+            beepEncoder();
             break;
 
         case Mode_MenuBeep:
             menuState.beep = !menuState.beep;
+            beepEncoder();
+            break;
+
+        case Mode_MenuCalV:
+        case Mode_MenuCalI:
+            break;
+
+        case Mode_CalV1:
+            updateCalValue(&cal1Disp, d, CFG->uSetMin, CFG->uMainLimit);
+            break;
+
+        case Mode_CalV2:
+            updateCalValue(&cal2Disp, d, CFG->uSetMin, CFG->uMainLimit);
+            break;
+
+        case Mode_CalI1r:
+            t = cal1First;
+            updateCalValue(&t, d, 0, LOAD_MAX);
+            cal1First = t;
+            LOAD_set(t);
+            break;
+
+        case Mode_CalI1v:
+            updateCalValue(&cal1Disp, d, CFG->iSetMin, CFG->iSetMax);
+            break;
+
+        case Mode_CalI2r:
+            t = cal2First;
+            updateCalValue(&t, d, 0, LOAD_MAX);
+            cal2First = t;
+            LOAD_set(t);
+            break;
+
+        case Mode_CalI2v:
+            updateCalValue(&cal2Disp, d, CFG->iSetMin, CFG->iSetMax);
             break;
 
         case Mode_Fun1:
@@ -775,47 +931,242 @@ void ENCODER_onChange(int8_t d) {
     }
 }
 
-void ENCODERBUTTON_onRelease(void) {
+static void startCalV1() {
+    cal1Disp = CFG->uSetMin;
+    mode = Mode_CalV1;
+    encoderMode = EncoderMode_U1;
+    adcMode = AdcMode_Cal1First;
+}
+
+static void startCalV2() {
+    cal2Disp = CFG->uSetMax;
+    mode = Mode_CalV2;
+    encoderMode = EncoderMode_U1;
+    adcMode = AdcMode_Cal2First;
+}
+
+static void startCalI1r() {
+    cal1First = 0;
+    mode = Mode_CalI1r;
+    encoderMode = EncoderMode_I1;
+    FAN_set(100);
+    LOAD_set(cal1First);
+    LOAD_start();
+}
+
+static void startCalI1v() {
+    cal1Disp = 0;
+    mode = Mode_CalI1v;
+    encoderMode = EncoderMode_I1;
+}
+
+static void startCalI2r() {
+    cal2First = 0;
+    mode = Mode_CalI2r;
+    encoderMode = EncoderMode_I1;
+    FAN_set(100);
+    LOAD_set(cal2First);
+    LOAD_start();
+}
+
+static void startCalI2v() {
+    cal2Disp = 0;
+    mode = Mode_CalI2v;
+    encoderMode = EncoderMode_I1;
+}
+
+static bool calcCal(uint32_t r1, uint32_t r2, uint16_t v1, uint16_t v2, struct ValueCoef* coef) {
+    int32_t t1, t2, o;
+    uint32_t m;
+    int32_t d = (int32_t)v1 - (int32_t)v2;
+
+    if(d == 0) return false;
+
+    t1 = r2*v1;
+    t2 = r1*v2;
+    o = (t1 - t2) / d;
+
+    if(o < 0 || o > r1 || o > r2 || o > 0xFFFFuL) return false;
+
+    m = ((uint32_t)v1 << coef->div) / (r1 - o);
+
+    if(m > 0xFFFFuL) return false;
+
+    coef->offset = o;
+    coef->mul = m;
+
+    return true;
+}
+
+static void endCalV() {
+    bool success;
+    struct ValueCoef uMainCoef;
+    struct ValueCoef uSenseCoef;
+
+    adcMode = AdcMode_None;
+
+    uMainCoef.offset = CFG->uMainCoef.offset;
+    uMainCoef.mul = CFG->uMainCoef.mul;
+    uMainCoef.div = CFG->uMainCoef.div;
+
+    uSenseCoef.offset = CFG->uSenseCoef.offset;
+    uSenseCoef.mul = CFG->uSenseCoef.mul;
+    uSenseCoef.div = CFG->uSenseCoef.div;
+
+    success = calcCal(cal1First, cal2First, cal1Disp, cal2Disp, &uMainCoef);
+    if(success)
+        success = calcCal(cal1Sec, cal2Sec, cal1Disp, cal2Disp, &uSenseCoef);
+
+    if(success) {
+        FLASH_unlockData();
+
+        CFG->uMainCoef.offset = uMainCoef.offset;
+        CFG->uMainCoef.mul = uMainCoef.mul;
+
+        CFG->uSenseCoef.offset = uSenseCoef.offset;
+        CFG->uSenseCoef.mul = uSenseCoef.mul;
+
+        FLASH_waitData();
+        FLASH_lockData();
+
+        beepButton();
+    }
+    else {
+        error |= ERROR_CAL;
+        beepError();
+    }
+}
+
+static void endCalI() {
+    bool success;
+    struct ValueCoef iSetCoef;
+
+    LOAD_stop();
+    LOAD_set(0);
+
+    iSetCoef.offset = CFG->iSetCoef.offset;
+    iSetCoef.mul = CFG->iSetCoef.mul;
+    iSetCoef.div = CFG->iSetCoef.div;
+
+    success = calcCal(cal1Disp, cal2Disp, cal1First, cal2First, &iSetCoef); // note: *Disp and *First are switched
+
+    if(success) {
+        FLASH_unlockData();
+
+        CFG->iSetCoef.offset = iSetCoef.offset;
+        CFG->iSetCoef.mul = iSetCoef.mul;
+
+        FLASH_waitData();
+        FLASH_lockData();
+
+        beepButton();
+    }
+    else {
+        error |= ERROR_CAL;
+        beepError();
+    }
+}
+
+void ENCODERBUTTON_onRelease(bool longpress) {
     if(error) return;
     if(inputDisable & INPUT_DISABLE_ENCODER_BUTTON) return;
 
-    switch(mode) {
-        case Mode_Booting:
-            break;
+    if(longpress) {
+        switch(mode) {
+            case Mode_MenuCalV:
+                startCalV1();
+                beepButton();
+                break;
 
-        case Mode_MenuFun:
-            break;
+            case Mode_MenuCalI:
+                startCalI1r();
+                beepButton();
+                break;
 
-        case Mode_MenuBeep:
-            break;
+            case Mode_CalV1:
+                startCalV2();
+                beepButton();
+                break;
 
-        case Mode_Fun1:
-        case Mode_Fun2:
-            switch(encoderMode) {
-                case EncoderMode_I1: encoderMode = EncoderMode_I0; break;
-                case EncoderMode_I0: encoderMode = EncoderMode_U1; break;
-                case EncoderMode_U1: encoderMode = EncoderMode_U0; break;
-                case EncoderMode_U0: encoderMode = EncoderMode_I1; break;
-            }
-            beepEncoderButton();
-            break;
+            case Mode_CalV2:
+                endCalV();
+                startCalI1r();
+                break;
 
-        case Mode_Fun1Run:
-        case Mode_Fun2Run:
-            switch(encoderMode) {
-                case EncoderMode_I1: encoderMode = EncoderMode_I0; break;
-                case EncoderMode_I0: encoderMode = EncoderMode_I1; break;
-            }
-            beepEncoderButton();
-            break;
+            case Mode_CalI1r:
+                startCalI1v();
+                beepButton();
+                break;
 
-        case Mode_Fun2Warn:
-            startFun2Res();
-            beepEncoderButton();
-            break;
+            case Mode_CalI1v:
+                startCalI2r();
+                beepButton();
+                break;
 
-        case Mode_Fun2Res:
-            break;
+            case Mode_CalI2r:
+                startCalI2v();
+                beepButton();
+                break;
+
+            case Mode_CalI2v:
+                endCalI();
+                stopMenu();
+                break;
+
+            default:
+                ;
+        }
+    }
+    else {
+        switch(mode) {
+            case Mode_Booting:
+            case Mode_MenuFun:
+            case Mode_MenuBeep:
+            case Mode_MenuCalV:
+            case Mode_MenuCalI:
+                break;
+
+            case Mode_CalV1:
+            case Mode_CalV2:
+                switch(encoderMode) {
+                    case EncoderMode_U1: encoderMode = EncoderMode_U0; break;
+                    case EncoderMode_U0: encoderMode = EncoderMode_U1; break;
+                }
+                beepEncoderButton();
+                break;
+
+            case Mode_Fun1:
+            case Mode_Fun2:
+                switch(encoderMode) {
+                    case EncoderMode_I1: encoderMode = EncoderMode_I0; break;
+                    case EncoderMode_I0: encoderMode = EncoderMode_U1; break;
+                    case EncoderMode_U1: encoderMode = EncoderMode_U0; break;
+                    case EncoderMode_U0: encoderMode = EncoderMode_I1; break;
+                }
+                beepEncoderButton();
+                break;
+
+            case Mode_CalI1r:
+            case Mode_CalI1v:
+            case Mode_CalI2r:
+            case Mode_CalI2v:
+            case Mode_Fun1Run:
+            case Mode_Fun2Run:
+                switch(encoderMode) {
+                    case EncoderMode_I1: encoderMode = EncoderMode_I0; break;
+                    case EncoderMode_I0: encoderMode = EncoderMode_I1; break;
+                }
+                beepEncoderButton();
+                break;
+
+            case Mode_Fun2Warn:
+                startFun2Res();
+                beepEncoderButton();
+                break;
+
+            case Mode_Fun2Res:
+                break;
+        }
     }
 }
 
@@ -865,6 +1216,8 @@ static void updateDisplays(void) {
     uint8_t bufA[4];
     uint8_t bufALeds = 0;
     uint8_t bufB[4];
+    uint16_t v;
+    uint8_t c, d;
 
     displayDashes(bufA);
 
@@ -879,20 +1232,44 @@ static void updateDisplays(void) {
         bufALeds = display[7];
     }
     else if(error) {
-        bufB[0] = DISPLAYS_SYM_E;
-        bufB[1] = DISPLAYS_SYM_r;
-        bufB[2] = DISPLAYS_SYM_r;
+        bufA[0] = DISPLAYS_SYM_E;
+        bufA[1] = DISPLAYS_SYM_r;
+        bufA[2] = DISPLAYS_SYM_r;
         if(error & ERROR_SUPPLY) {
-            bufB[3] = DISPLAYS_SYM_6;
+            bufB[0] = DISPLAYS_SYM_S;
+            bufB[1] = DISPLAYS_SYM_U;
+            bufB[2] = DISPLAYS_SYM_P;
+            bufB[3] = DISPLAYS_SYM_L;
         }
         else if(error & ERROR_POLARITY) {
-            bufB[3] = DISPLAYS_SYM_2;
+            bufB[0] = DISPLAYS_SYM_P;
+            bufB[1] = DISPLAYS_SYM_O;
+            bufB[2] = DISPLAYS_SYM_L;
+            bufB[3] = DISPLAYS_SYM_SPACE;
         }
         else if(error & ERROR_OUP) {
-            bufB[0] = DISPLAYS_SYM_SPACE;
-            bufB[1] = DISPLAYS_SYM_o;
-            bufB[2] = DISPLAYS_SYM_u;
-            bufB[3] = DISPLAYS_SYM_P;
+            bufB[0] = DISPLAYS_SYM_O;
+            bufB[1] = DISPLAYS_SYM_U;
+            bufB[2] = DISPLAYS_SYM_P;
+            bufB[3] = DISPLAYS_SYM_SPACE;
+        }
+        else if(error & ERROR_ERT) {
+            bufB[0] = DISPLAYS_SYM_t;
+            bufB[1] = DISPLAYS_SYM_S;
+            bufB[2] = DISPLAYS_SYM_E;
+            bufB[3] = DISPLAYS_SYM_n;
+        }
+        else if(error & ERROR_OTP) {
+            bufB[0] = DISPLAYS_SYM_O;
+            bufB[1] = DISPLAYS_SYM_t;
+            bufB[2] = DISPLAYS_SYM_P;
+            bufB[3] = DISPLAYS_SYM_SPACE;
+        }
+        else if(error & ERROR_CAL) {
+            bufB[0] = DISPLAYS_SYM_C;
+            bufB[1] = DISPLAYS_SYM_A;
+            bufB[2] = DISPLAYS_SYM_L;
+            bufB[3] = DISPLAYS_SYM_SPACE;
         }
         else {
             bufB[3] = DISPLAYS_SYM_0;
@@ -931,6 +1308,45 @@ static void updateDisplays(void) {
                 bufB[1] = DISPLAYS_SYM_E;
                 bufB[2] = DISPLAYS_SYM_o;
                 bufB[3] = (menuState.beep ? DISPLAYS_SYM_n : DISPLAYS_SYM_F);
+                break;
+
+            case Mode_MenuCalV:
+                bufB[0] = DISPLAYS_SYM_C;
+                bufB[1] = DISPLAYS_SYM_A;
+                bufB[2] = DISPLAYS_SYM_L;
+                bufB[3] = DISPLAYS_SYM_SPACE;
+                bufALeds = LED_V;
+                break;
+
+            case Mode_MenuCalI:
+                bufB[0] = DISPLAYS_SYM_C;
+                bufB[1] = DISPLAYS_SYM_A;
+                bufB[2] = DISPLAYS_SYM_L;
+                bufB[3] = DISPLAYS_SYM_SPACE;
+                bufALeds = LED_A;
+                break;
+
+            case Mode_CalV1:
+            case Mode_CalV2:
+            case Mode_CalI1r:
+            case Mode_CalI1v:
+            case Mode_CalI2r:
+            case Mode_CalI2v:
+                switch(mode) {
+                    case Mode_CalV1:  v = cal1Disp;  c = DISPLAYS_SYM_1; d = DISPLAYS_DOT; break;
+                    case Mode_CalV2:  v = cal2Disp;  c = DISPLAYS_SYM_2; d = DISPLAYS_DOT; break;
+                    case Mode_CalI1r: v = cal1First; c = DISPLAYS_SYM_1; d = 0;            bufALeds |= LED_RUN; break;
+                    case Mode_CalI1v: v = cal1Disp;  c = DISPLAYS_SYM_2; d = DISPLAYS_DOT; bufALeds |= LED_RUN; break;
+                    case Mode_CalI2r: v = cal2First; c = DISPLAYS_SYM_3; d = 0;            bufALeds |= LED_RUN; break;
+                    case Mode_CalI2v: v = cal2Disp;  c = DISPLAYS_SYM_4; d = DISPLAYS_DOT; bufALeds |= LED_RUN; break;
+                    default: v = 0; c = DISPLAYS_SYM_SPACE; d = 0;
+                }
+                displayInt((v % 1000) * 10, 0, bufA);
+                bufA[0] &= ~DISPLAYS_DOT;
+                displayInt(v / 1000, 4, bufB);
+                bufB[0] = c;
+                bufB[3] |= d;
+                bufALeds |= encoderStateToLeds();
                 break;
 
             case Mode_Fun1:
@@ -1279,13 +1695,6 @@ static void processUartCommand(const uint8_t* buf, uint8_t size) {
             UART_write("->");
             for(; size > 0; --size, ++buf) UART_writeHexU8(*buf);
     }
-
-    /*
-    UART_write("cmd done ");
-    UART_writeHexU8(buf[0]);
-    UART_writeHexU8(size);
-    UART_write("\r\n");
-    */
 }
 
 static void processUartRx(void) {
@@ -1374,6 +1783,9 @@ int main(void) {
 
     startBooting();
 
+    calcCal(300uL, 6400uL, 197uL, 2501uL, &CFG->iSetCoef);
+    calcCal(197uL, 2501uL, 300uL, 6400uL, &CFG->iSetCoef);
+
     {
         uint32_t lastDump   = SYSTEMTIMER_ms;
         uint32_t lastUpdate = SYSTEMTIMER_ms;
@@ -1383,14 +1795,18 @@ int main(void) {
             ENCODER_process();
             ENCODERBUTTON_process();
             BUTTON_process();
-            recalcValues();
-            checkErrors();
-            controlFan();
+            if(AdcMode_Normal == adcMode) {
+                recalcValues();
+                checkErrors();
+                controlFan();
+            }
 
             switch(mode) {
                 case Mode_Booting:  doBooting();     break;
                 case Mode_MenuFun:                   break;
                 case Mode_MenuBeep:                  break;
+                case Mode_MenuCalV:                  break;
+                case Mode_MenuCalI:                  break;
                 case Mode_Fun1:                      break;
                 case Mode_Fun1Run:  doFun1();        break;
                 case Mode_Fun2:                      break;

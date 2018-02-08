@@ -6,6 +6,8 @@
 
 #include "stm8.h"
 
+#define LOAD_MAX 0x7FFFuL
+
 // PWM on PC1/TIM1_CH1
 void LOAD_init(void);
 

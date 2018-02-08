@@ -4,8 +4,8 @@
 void LOAD_init(void) {
     TIM1->PSCRH = 0;
     TIM1->PSCRL = 0;
-    TIM1->ARRH  = 0x7F; // FIXME increase frequency? don't lose accuracy
-    TIM1->ARRL  = 0xFF;
+    TIM1->ARRH  = (uint8_t)(LOAD_MAX >> 8); // FIXME increase frequency? don't lose accuracy
+    TIM1->ARRL  = (uint8_t)LOAD_MAX;
     TIM1->BKR   = TIM1_BKR_MOE;
     TIM1->CCMR1 = TIM1_CCMR1_OC1M_PWM1 | TIM1_CCMR1_OC1PE;
     TIM1->CCER1 = TIM1_CCER1_CC1E;

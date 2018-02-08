@@ -4,7 +4,7 @@
 #include <stdbool.h>
 
 void ENCODERBUTTON_init(void);
-void ENCODERBUTTON_onRelease(void);
+void ENCODERBUTTON_onRelease(bool longpress);
 void ENCODERBUTTON_cycle(void);
 void ENCODERBUTTON_process(void);
 
