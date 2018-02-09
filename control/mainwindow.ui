@@ -141,7 +141,7 @@
      <x>0</x>
      <y>0</y>
      <width>1300</width>
-     <height>27</height>
+     <height>21</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
@@ -340,26 +340,20 @@
       </widget>
      </item>
      <item row="7" column="1" colspan="2">
-      <widget class="QwtThermo" name="temperatureBox">
+      <widget class="QwtThermo" name="temperatureBox" native="true">
        <property name="toolTip">
         <string/>
        </property>
-       <property name="scaleStepSize">
+       <property name="scaleStepSize" stdset="0">
         <double>0.000000000000000</double>
        </property>
-       <property name="orientation">
-        <enum>Qt::Horizontal</enum>
-       </property>
-       <property name="scalePosition">
-        <enum>QwtThermo::NoScale</enum>
-       </property>
-       <property name="alarmEnabled">
+       <property name="alarmEnabled" stdset="0">
         <bool>false</bool>
        </property>
-       <property name="alarmLevel">
+       <property name="alarmLevel" stdset="0">
         <double>80.000000000000000</double>
        </property>
-       <property name="value">
+       <property name="value" stdset="0">
         <double>0.000000000000000</double>
        </property>
       </widget>
@@ -504,10 +498,13 @@
    <property name="text">
     <string>Device &amp;Calibrate</string>
    </property>
+   <property name="visible">
+    <bool>false</bool>
+   </property>
   </action>
   <action name="actionUpgradeFirmware">
    <property name="enabled">
-    <bool>false</bool>
+    <bool>true</bool>
    </property>
    <property name="text">
     <string>&amp;Upgrade Device Firmware</string>

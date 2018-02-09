@@ -64,10 +64,18 @@ QByteArray formCmdData(const CmdData& data)
             }
             break;
 
+        case Cmd::Bootloader:
+            {
+                const CmdBootloaderData& d = static_cast<const CmdBootloaderData&>(data);
+                stream << (uint8_t)(d.enable ? 1 : 0);
+            }
+            break;
+
         case Cmd::ReadConfig:
         case Cmd::ReadSettings:
         case Cmd::GetVersion:
         case Cmd::ResetState:
+        case Cmd::Reboot:
             break;
 
         default:
@@ -155,7 +163,7 @@ CmdData* parseCmdData(const QByteArray& data)
                 uint8_t mode;
                 stream >> mode;
                 stream >> res->error;
-                stream >> res->uCurrent;
+                stream >> res->uMain;
                 stream >> res->uSense;
                 stream >> res->tempRaw;
                 stream >> res->uSupRaw;

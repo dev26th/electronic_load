@@ -3,6 +3,7 @@
 
 #include "decoder.h"
 #include "comm.h"
+#include "flasher.h"
 #include "samplestorage.h"
 #include "curvedata.h"
 #include "tablemodel.h"
@@ -67,11 +68,17 @@ private slots:
 
     void on_energyResetButton_clicked();
 
+    void on_actionUpgradeFirmware_triggered();
+
+    void on_flasherError(QString msg);
+
 signals:
     void portConnect(QString portName);
     void portDisconnect();
     void send(QByteArray data);
     void sample(Sample s);
+    void upgradeDevice(QString portName, QByteArray fileContent);
+    void cancelUpgradeDevice();
 
 public:
     void closeEvent(QCloseEvent *event);
@@ -84,15 +91,38 @@ private:
     void configDevice();
     void updateFun();
     void setupTemperatureBox();
+    void startUpgrade(const QByteArray& data);
+
+private:
+    struct ToExecute {
+        enum class Action {
+            Send,
+            Disconnect,
+            StartUpgrade,
+        };
+
+        Action action;
+        QByteArray data;
+
+        ToExecute() {}
+
+        ToExecute(const ToExecute& o) : action(o.action), data(o.data) {}
+
+        ToExecute(Action action_) : action(action_) {}
+
+        ToExecute(Action action_, QByteArray data_) : action(action_), data(data_) {}
+    };
 
 private:
     Ui::MainWindow *ui;
 
     Comm *comm;
     QThread commThread;
+    Flasher *flasher;
+    QThread flasherThread;
     bool isConnected;
     QString currentPort;
-    QQueue<QByteArray> toExecute;
+    QQueue<ToExecute> toExecute;
     int interval;
     uint16_t deviceCurrent;
     uint16_t deviceLastU;

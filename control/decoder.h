@@ -106,7 +106,7 @@ struct CmdStateData : public CmdData {
 
     DeviceMode mode;
     uint8_t error;
-    uint16_t uCurrent;
+    uint16_t uMain;
     uint16_t uSense;
     uint16_t tempRaw;
     uint16_t uSupRaw;
@@ -124,6 +124,12 @@ struct CmdVersionData : public CmdData {
     CmdVersionData(Cmd cmd_, CmdState state_) : CmdData(cmd_, state_) {}
 
     uint32_t v;
+};
+
+struct CmdBootloaderData : public CmdData {
+    CmdBootloaderData(bool enable_) : CmdData(Cmd::Bootloader, CmdState::Request), enable(enable_) {}
+
+    bool enable;
 };
 
 QByteArray formCmdData(const CmdData& data);

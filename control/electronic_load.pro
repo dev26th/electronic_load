@@ -22,7 +22,10 @@ SOURCES += main.cpp\
     logtable.cpp \
     aboutdialog.cpp \
     decoder.cpp \
-    configdialog.cpp
+    configdialog.cpp \
+    flasherworker.cpp \
+    flasher.cpp \
+    flashprogressdialog.cpp
 
 HEADERS  += mainwindow.h \
     decoder.h \
@@ -36,11 +39,15 @@ HEADERS  += mainwindow.h \
     settings.h \
     aboutdialog.h \
     stdio_fix.h \
-    configdialog.h
+    configdialog.h \
+    flasherworker.h \
+    flasher.h \
+    flashprogressdialog.h
 
 FORMS    += mainwindow.ui \
     aboutdialog.ui \
-    configdialog.ui
+    configdialog.ui \
+    flashprogressdialog.ui
 
 RC_ICONS = app.ico
 

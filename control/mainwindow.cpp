@@ -4,6 +4,7 @@
 #include "settings.h"
 #include "aboutdialog.h"
 #include "configdialog.h"
+#include "flashprogressdialog.h"
 
 #include <qwt_plot_curve.h>
 #include <qwt_plot_grid.h>
@@ -120,6 +121,16 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(comm, &Comm::stateChanged, this, &MainWindow::on_serStateChanged);
     commThread.start();
 
+    // flasher
+    flasher = new Flasher();
+    flasher->moveToThread(&flasherThread);
+    connect(&flasherThread, &QThread::started, flasher, &Flasher::onStart);
+    connect(&flasherThread, &QThread::finished, flasher, &Flasher::deleteLater);
+    connect(this, &MainWindow::upgradeDevice, flasher, &Flasher::portConnect);
+    connect(this, &MainWindow::cancelUpgradeDevice, flasher, &Flasher::portDisconnect);
+    connect(flasher, &Flasher::error, this, &MainWindow::on_flasherError);
+    flasherThread.start();
+
     // interval
     ui->intervalBox->setValue(settings.value("interval", MIN_INTERVAL_MS).toInt());
 
@@ -137,7 +148,10 @@ MainWindow::MainWindow(QWidget *parent) :
 MainWindow::~MainWindow()
 {
     commThread.quit();
+    flasherThread.quit();
+
     commThread.wait();
+    flasherThread.wait();
 
     delete ui;
 }
@@ -182,7 +196,7 @@ void MainWindow::setControlEnabled(bool state)
     ui->limitUpdateButton->setEnabled(state);
     ui->energyResetButton->setEnabled(state);
     ui->runButton->setEnabled(state);
-    ui->menuService->setEnabled(state);
+    ui->actionDeviceConfiguration->setEnabled(state);
 
     if(state) {
         bool showEnergy = (deviceConfigData.fun == 1);
@@ -273,6 +287,7 @@ void MainWindow::on_actionAbout_triggered()
 {
     AboutDialog * dialog = new AboutDialog(this);
     dialog->exec();
+    delete dialog;
 }
 
 static bool saveStorageToCsvFile(const SampleStorage &storage, QFile &file)
@@ -325,7 +340,7 @@ void MainWindow::on_runButton_clicked()
 void MainWindow::on_serError(QString msg)
 {
     showError(msg);
-    this->disconnectSer();
+    disconnectSer();
 }
 
 static void addError(QString& all, const QString& add)
@@ -413,16 +428,16 @@ void MainWindow::on_serData(QByteArray d, qint64 timestamp)
                         Sample s;
                         s.timestamp = ((timestamp + this->interval/2) / this->interval) * this->interval; // round up to interval borders
 
-                        bool is4Wire = (c->uSense >= c->uCurrent);
-                        uint16_t u = (is4Wire ? c->uSense : c->uCurrent);
-                        qDebug() << u << deviceLastU << abs((int)u - (int)deviceLastU);
+                        bool is4Wire = (c->uSense + 100 >= c->uMain);
+                        qDebug() << c->uSense << c->uMain << is4Wire;
+                        uint16_t u = (is4Wire ? c->uSense : c->uMain);
+                        //qDebug() << u << deviceLastU << abs((int)u - (int)deviceLastU);
                         if(abs((int)u - (int)deviceLastU) < U_THRESHOLD)
                             u = deviceLastU;
                         else
                             deviceLastU = u;
 
-                        s.u = qFloor((double)u / 10.0 + 0.5) / 100.0; // FIXME good? FIXME very seldom different value as on the device display
-                        //s.u = (double)u / 1000; // FIXME good? FIXME very seldom different value as on the device display
+                        s.u = qFloor((double)u / 10.0 + 0.5) / 100.0; // FIXME good? or s.u = (double)u / 1000;
                         s.i = (double)deviceCurrent / 1000;
                         s.ah = (double)c->ah / 1000;
                         s.wh = (double)c->wh / 1000;
@@ -455,7 +470,7 @@ void MainWindow::on_serData(QByteArray d, qint64 timestamp)
                         deviceMessageLabel->setText(deviceMessage);
                         deviceMessageLabel->setVisible(true);
 
-                        ui->uActualBox->setText(QString("%L1 V").arg(s.u, 0, 'f', 3));
+                        ui->uActualBox->setText(QString("%L1 V").arg(s.u, 0, 'f', 2));
                         ui->energyBox->setText(QString("%L1 A⋅h (%L2 W⋅h)").arg(s.ah, 0, 'f', 3).arg(s.wh, 0, 'f', 3));
                         ui->wireLabel->setVisible(is4Wire);
                         ui->temperatureBox->setValue(1/(double)c->tempRaw);
@@ -487,6 +502,7 @@ void MainWindow::on_serStateChanged(Comm::State state)
             deviceMessageLabel->clear();
             break;
     }
+    executeNext();
 }
 
 void MainWindow::configDevice()
@@ -494,17 +510,32 @@ void MainWindow::configDevice()
     this->interval = ui->intervalBox->value();
 
     toExecute.clear();
-    toExecute.enqueue(formCmdData(Cmd::GetVersion));
-    toExecute.enqueue(formCmdData(Cmd::ReadConfig));
-    toExecute.enqueue(formCmdData(Cmd::ReadSettings));
-    toExecute.enqueue(formCmdData(CmdFlowStateData(this->interval)));
+    toExecute.enqueue(ToExecute(ToExecute::Action::Send, formCmdData(Cmd::GetVersion)));
+    toExecute.enqueue(ToExecute(ToExecute::Action::Send, formCmdData(Cmd::ReadConfig)));
+    toExecute.enqueue(ToExecute(ToExecute::Action::Send, formCmdData(Cmd::ReadSettings)));
+    toExecute.enqueue(ToExecute(ToExecute::Action::Send, formCmdData(CmdFlowStateData(this->interval))));
     executeNext();
 }
 
 void MainWindow::executeNext()
 {
-    if(!toExecute.isEmpty())
-        emit send(toExecute.dequeue());
+    if(toExecute.isEmpty()) return;
+
+    ToExecute e = toExecute.dequeue();
+    switch(e.action) {
+        case ToExecute::Action::Send:
+            emit send(e.data);
+            break;
+
+    case ToExecute::Action::Disconnect:
+        disconnectSer();
+        break;
+
+
+    case ToExecute::Action::StartUpgrade:
+        startUpgrade(e.data);
+        break;
+    }
 }
 
 void MainWindow::on_limitUpdateButton_clicked()
@@ -521,13 +552,188 @@ void MainWindow::on_actionDeviceConfiguration_triggered()
     ConfigDialog * dialog = new ConfigDialog(this, d);
     connect(dialog, &ConfigDialog::send, comm, &Comm::send);
     if(1 == dialog->exec()) {
-        toExecute.enqueue(formCmdData(d));
-        toExecute.enqueue(formCmdData(Cmd::ReadConfig));
+        toExecute.enqueue(ToExecute(ToExecute::Action::Send, formCmdData(d)));
+        toExecute.enqueue(ToExecute(ToExecute::Action::Send, formCmdData(Cmd::ReadConfig)));
         executeNext();
     }
+    delete dialog;
 }
 
 void MainWindow::on_energyResetButton_clicked()
 {
     emit send(formCmdData(Cmd::ResetState));
+}
+
+// note: length not checked
+static uint8_t parse_hex(const QChar& d1, const QChar& d2) {
+    uint8_t d[2];
+    for(int i = 0; i < 2; ++i) {
+        char c = (i==0?d1:d2).toLatin1();
+        if(c >= '0' && c <= '9') d[i] = c - '0';
+        else if(c >= 'A' && c <= 'F') d[i] = c - 'A' + 10;
+        else if(c >= 'a' && c <= 'f') d[i] = c - 'a' + 10;
+        else return 0; // error
+    }
+    return (d[0] << 4) | (d[1]);
+}
+
+static void parse_ihex(QByteArray& hexFile, uint8_t erased_pattern, QByteArray& out, uint32_t& begin) {
+    begin = UINT32_MAX;
+    uint32_t end = 0;
+    bool eof_found = false;
+
+    for(int scan = 0; scan < 2; ++scan) { // parse file two times - first to find memory range, second - to fill it
+        if(scan == 1) {
+            if(!eof_found)
+                throw "No EoF recond";
+
+            if(begin >= end)
+                throw "No data found in file";
+
+            out.fill(erased_pattern, (end - begin) + 1);
+        }
+
+        QTextStream stream(&hexFile);
+        uint32_t lba = 0;
+
+        while(!stream.atEnd()) {
+            QString line = stream.readLine();
+            if(line[0] == '\n' || line[0] == '\r') continue; // skip empty lines
+            if(line[0] != ':') // no marker - wrong file format
+                throw "Wrong file format - no marker";
+
+            int l = line.length();
+            while(l > 0 && (line[l-1] == '\n' || line[l-1] == '\r')) --l; // trim EoL
+            if(l < 11) // line too short - wrong file format
+                throw "Wrong file format - wrong line length";
+
+            // check sum
+            uint8_t chksum = 0;
+            for(int i = 1; i < l-1; i += 2) {
+                chksum += parse_hex(line[i], line[i+1]);
+            }
+            if(chksum != 0)
+                throw "Wrong file format - checksum mismatch";
+
+            uint8_t reclen = parse_hex(line[1], line[2]);
+            if(((uint32_t)reclen + 5)*2 + 1 != (uint32_t)l)
+                throw "Wrong file format - record length mismatch";
+
+            uint16_t offset  = ((uint16_t)parse_hex(line[3], line[4]) << 8) | ((uint16_t)parse_hex(line[5], line[6]));
+            uint8_t  rectype = parse_hex(line[7], line[8]);
+
+            switch(rectype) {
+                case 0: // data
+                    if(scan == 0) {
+                        uint32_t b = lba + offset;
+                        uint32_t e = b + reclen - 1;
+                        if(b < begin) begin = b;
+                        if(e > end) end = e;
+                    }
+                    else {
+                        for(size_t i = 0; i < reclen; ++i) {
+                            uint8_t b = parse_hex(line[(uint)(9 + i*2)], line[(uint)(10 + i*2)]);
+                            uint32_t addr = lba + offset + i;
+                            if(addr >= begin && addr <= end) {
+                                out[addr - begin] = b;
+                            }
+                        }
+                    }
+                    break;
+
+                case 1: // EoF
+                    eof_found = true;
+                    break;
+
+                case 2: // Extended Segment Address, unexpected
+                    throw "Unexpected";
+
+                case 3: // Start Segment Address, unexpected
+                    throw "Unexpected";
+
+                case 4: // Extended Linear Address
+                    if(reclen == 2)
+                        lba = ((uint32_t)parse_hex(line[9], line[10]) << 24) | ((uint32_t)parse_hex(line[11], line[12]) << 16);
+                    else
+                        throw "Wrong file format - wrong LBA length";
+                    break;
+
+                case 5: // Start Linear Address - expected, but ignore
+                    break;
+
+                default:
+                    throw "Wrong file format - unexpected record type";
+            }
+        }
+    }
+}
+
+void MainWindow::on_actionUpgradeFirmware_triggered()
+{
+    QString fileName = QFileDialog::getOpenFileName(this,
+        tr("Select firmware file"), "",
+        tr("Intel-HEX Files (*.ihex *.ihx *.hex);;Binary Files (*.bin);;All Files (*)"));
+    if(fileName.isEmpty()) return;
+
+    QByteArray fileContent;
+    QFile inputFile(fileName);
+    if(!inputFile.open(QFile::ReadOnly)) {
+        showError(QString("Cannot read from file %1:\n%2.").arg(fileName).arg(inputFile.errorString()));
+        return;
+    }
+    else {
+        try {
+            fileContent = inputFile.readAll();
+        }
+        catch(char const* msg) {
+            showError(QString("Cannot read from file %1:\n%2.").arg(fileName).arg(msg));
+            return;
+        }
+    }
+
+    QString fileNameLc = fileName.toLower();
+    if(fileNameLc.endsWith(".ihex") || fileNameLc.endsWith(".ihx") || fileNameLc.endsWith(".hex")) {
+        uint32_t begin;
+        QByteArray bin;
+
+        try {
+            parse_ihex(fileContent, 0xFF, bin, begin);
+        }
+        catch(char const* msg) {
+            showError(QString("Cannot parse file %1 is Intel-HEX:\n%2.").arg(fileName).arg(msg));
+            return;
+        }
+
+        fileContent = bin;
+    }
+
+    if(isConnected) {
+        toExecute.clear();
+        toExecute.enqueue(ToExecute(ToExecute::Action::Send, formCmdData(CmdBootloaderData(true))));
+        toExecute.enqueue(ToExecute(ToExecute::Action::Send, formCmdData(Cmd::Reboot)));
+        toExecute.enqueue(ToExecute(ToExecute::Action::Disconnect));
+    }
+
+    toExecute.enqueue(ToExecute(ToExecute::Action::StartUpgrade, fileContent));
+    executeNext();
+}
+
+void MainWindow::startUpgrade(const QByteArray &data)
+{
+    FlashProgressDialog * dialog = new FlashProgressDialog(this);
+    connect(flasher, &Flasher::progress, dialog, &FlashProgressDialog::on_progress);
+    connect(flasher, &Flasher::stateChanged, dialog, &FlashProgressDialog::on_stateChanged);
+
+    emit upgradeDevice(currentPort, data);
+    dialog->exec();
+    emit cancelUpgradeDevice();
+
+    delete dialog;
+    executeNext();
+}
+
+void MainWindow::on_flasherError(QString msg)
+{
+    emit cancelUpgradeDevice();
+    showError(msg);
 }
