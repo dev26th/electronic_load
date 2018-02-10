@@ -429,7 +429,7 @@ void MainWindow::on_serData(QByteArray d, qint64 timestamp)
                         s.timestamp = ((timestamp + this->interval/2) / this->interval) * this->interval; // round up to interval borders
 
                         bool is4Wire = (c->uSense + 100 >= c->uMain);
-                        qDebug() << c->uSense << c->uMain << is4Wire;
+                        //qDebug() << c->uSense << c->uMain << is4Wire;
                         uint16_t u = (is4Wire ? c->uSense : c->uMain);
                         //qDebug() << u << deviceLastU << abs((int)u - (int)deviceLastU);
                         if(abs((int)u - (int)deviceLastU) < U_THRESHOLD)
@@ -455,16 +455,24 @@ void MainWindow::on_serData(QByteArray d, qint64 timestamp)
                         }
                         else {
                             switch(c->mode) {
-                                case DeviceMode::Booting:  deviceMessage = "Booting"; break;
-                                case DeviceMode::MenuFun:  deviceMessage = "Menu";    break;
-                                case DeviceMode::MenuBeep: deviceMessage = "Menu";    break;
-                                case DeviceMode::Fun1:     deviceMessage = "Idle";    break;
-                                case DeviceMode::Fun1Run:  deviceMessage = "Run";     break;
-                                case DeviceMode::Fun2:     deviceMessage = "Idle";    break;
-                                case DeviceMode::Fun2Pre:  deviceMessage = "Run";     break;
-                                case DeviceMode::Fun2Run:  deviceMessage = "Run";     break;
-                                case DeviceMode::Fun2Warn: deviceMessage = "Stop";    break;
-                                case DeviceMode::Fun2Res:  deviceMessage = "Stop";    break;
+                                case DeviceMode::Booting:  deviceMessage = "Booting";     break;
+                                case DeviceMode::MenuFun:  deviceMessage = "Menu";        break;
+                                case DeviceMode::MenuBeep: deviceMessage = "Menu";        break;
+                                case DeviceMode::MenuCalV: deviceMessage = "Menu";        break;
+                                case DeviceMode::MenuCalI: deviceMessage = "Menu";        break;
+                                case DeviceMode::CalV1:    deviceMessage = "Calibration"; break;
+                                case DeviceMode::CalV2:    deviceMessage = "Calibration"; break;
+                                case DeviceMode::CalI1r:   deviceMessage = "Calibration"; break;
+                                case DeviceMode::CalI1v:   deviceMessage = "Calibration"; break;
+                                case DeviceMode::CalI2r:   deviceMessage = "Calibration"; break;
+                                case DeviceMode::CalI2v:   deviceMessage = "Calibration"; break;
+                                case DeviceMode::Fun1:     deviceMessage = "Idle";        break;
+                                case DeviceMode::Fun1Run:  deviceMessage = "Run";         break;
+                                case DeviceMode::Fun2:     deviceMessage = "Idle";        break;
+                                case DeviceMode::Fun2Pre:  deviceMessage = "Run";         break;
+                                case DeviceMode::Fun2Run:  deviceMessage = "Run";         break;
+                                case DeviceMode::Fun2Warn: deviceMessage = "Stop";        break;
+                                case DeviceMode::Fun2Res:  deviceMessage = "Stop";        break;
                             }
                         }
                         deviceMessageLabel->setText(deviceMessage);
