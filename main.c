@@ -88,6 +88,7 @@ static volatile uint8_t  tickCount;
 
 static uint16_t uSet;            // mV
 static uint16_t iSet;            // mA
+static uint16_t iSetDisp;        // in units: 100uA or 1mA
 static uint32_t powLimit;        // uW
 static uint16_t uMain;           // mV
 static uint16_t uSense;          // mV
@@ -186,6 +187,7 @@ struct Config {
     uint8_t          beepOn;
     uint16_t         uSet;          // mV
     uint16_t         iSet;          // mA
+    uint8_t          curUnit;       // 0=mA, 1=100uA
 };
 static_assert(sizeof(struct Config) <= 128, "Config is bigger than EEPROM");
 #define CFG ((struct Config*)0x4000) // begin of the EEPROM
@@ -407,7 +409,15 @@ static void recalcValues(void) {
 }
 
 static void updateISet(void) {
-    LOAD_set(recalcValue(iSet, &CFG->iSetCoef));
+    LOAD_set(recalcValue(iSetDisp, &CFG->iSetCoef));
+}
+
+static void iSetToDisp(void) {
+    iSetDisp = (CFG->curUnit == 0 ? iSet : iSet * 10);
+}
+
+static void iSetFromDisp(void) {
+    iSet = (CFG->curUnit == 0 ? iSetDisp : iSetDisp / 10);
 }
 
 static void saveMenuSettings(void) {
@@ -520,6 +530,7 @@ static void startFun1(void) {
     mode = Mode_Fun1Run;
     if(encoderMode == EncoderMode_U1 || encoderMode == EncoderMode_U0)
         encoderMode = EncoderMode_I0;
+    iSetFromDisp();
     updateISet();
     LOAD_start();
     conn4 = false;
@@ -542,6 +553,7 @@ static void doFun1(void) {
     if((int32_t)uMain * iSet >= powLimit) {
         iSet = (powLimit / uMain / 10) * 10;
         uiSetModified = true;
+        iSetToDisp();
         updateISet();
     }
 
@@ -565,6 +577,7 @@ static void startFun2(void) {
     mode = Mode_Fun2Pre;
     if(encoderMode == EncoderMode_U1 || encoderMode == EncoderMode_U0)
         encoderMode = EncoderMode_I0;
+    iSetFromDisp();
     updateISet();
     conn4 = (uSense > CFG->uSenseMin);
     uCoef = (conn4 ? &CFG->uSenseCoef : &CFG->uMainCoef);
@@ -638,6 +651,7 @@ static void doFun2(void) {
     if((int32_t)uMain * iSet >= powLimit) {
         iSet = (powLimit / uMain / 10) * 10;
         uiSetModified = true;
+        iSetToDisp();
         updateISet();
     }
 
@@ -911,14 +925,15 @@ void ENCODER_onChange(int8_t d) {
         case Mode_Fun2:
         case Mode_Fun2Run:
             switch(encoderMode) {
-                case EncoderMode_I1: updateValue(&iSet,  100*d, CFG->iSetMin, CFG->iSetMax); break;
-                case EncoderMode_I0: updateValue(&iSet,   10*d, CFG->iSetMin, CFG->iSetMax); break;
-                case EncoderMode_U1: updateValue(&uSet, 1000*d, CFG->uSetMin, CFG->uSetMax); break;
-                case EncoderMode_U0: updateValue(&uSet,  100*d, CFG->uSetMin, CFG->uSetMax); break;
+                case EncoderMode_I1: updateValue(&iSetDisp, 100*d, CFG->iSetMin, CFG->iSetMax); break;
+                case EncoderMode_I0: updateValue(&iSetDisp,  10*d, CFG->iSetMin, CFG->iSetMax); break;
+                case EncoderMode_U1: updateValue(&uSet,    1000*d, CFG->uSetMin, CFG->uSetMax); break;
+                case EncoderMode_U0: updateValue(&uSet,     100*d, CFG->uSetMin, CFG->uSetMax); break;
             }
 
             beepEncoder();
             uiSetModified = true;
+            iSetFromDisp();
             updateISet();
             break;
 
@@ -1184,7 +1199,7 @@ static void displayDashes(uint8_t* buf) {
     buf[3] = DISPLAYS_SYM_DASH;
 }
 
-static void displayInt(uint16_t v, uint8_t dot, uint8_t* buf) {
+static void displayInt(uint16_t v, int8_t dot, uint8_t* buf) {
     while(v > 9999) {
         v /= 10;
         ++dot;
@@ -1351,14 +1366,14 @@ static void updateDisplays(void) {
 
             case Mode_Fun1:
             case Mode_Fun2:
-                displayInt(iSet, 0, bufA);
+                displayInt(iSetDisp, -(int8_t)CFG->curUnit, bufA);
                 bufALeds = encoderStateToLeds();
                 displayInt(uSet/10, 1, bufB);
                 bufB[3] = DISPLAYS_SYM_u;
                 break;
 
             case Mode_Fun1Run:
-                displayInt(iSet, 0, bufA);
+                displayInt(iSetDisp, -(int8_t)CFG->curUnit, bufA);
                 bufALeds = encoderStateToLeds() | LED_V;
                 if(!fun1State.flip) bufALeds |= LED_RUN;
                 displayInt((uMain + 5)/10, 1, bufB);
@@ -1376,7 +1391,7 @@ static void updateDisplays(void) {
                 // fallthrough
 
             case Mode_Fun2Res:
-                displayInt(iSet, 0, bufA);
+                displayInt(iSetDisp, -(int8_t)CFG->curUnit, bufA);
                 bufALeds |= encoderStateToLeds();
                 switch(fun2State.disp) {
                     case DisplayedValue_V:
@@ -1422,6 +1437,7 @@ static void recalcConfigValues() {
     iSet = CFG->iSet;
     if(iSet < CFG->iSetMin)      iSet = CFG->iSetMin;
     else if(iSet > CFG->iSetMax) iSet = CFG->iSetMax;
+    iSetToDisp();
 }
 
 static inline void initialState(void) {
@@ -1628,6 +1644,7 @@ static void processUartCommand(const uint8_t* buf, uint8_t size) {
             if(size == 5) {
                 uSet = ((uint16_t)buf[1] << 8) | buf[2];
                 iSet = ((uint16_t)buf[3] << 8) | buf[4];
+                iSetToDisp();
                 commitUartCommand(buf[0]);
             }
             break;

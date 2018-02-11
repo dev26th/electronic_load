@@ -36,7 +36,7 @@ ConfigDialog::ConfigDialog(QWidget *parent, CmdConfigData& deviceConfigData_) :
     ui->uSetMaxBox->setText(QString::number(deviceConfigData.uSetMax));
     ui->uSenseMinBox->setText(QString::number(deviceConfigData.uSenseMin));
     ui->uNegativeBox->setText(QString::number(deviceConfigData.uNegative));
-    ui->uCurLimitBox->setText(QString::number(deviceConfigData.uCurLimit));
+    ui->uCurLimitBox->setText(QString::number(deviceConfigData.uMainLimit));
     ui->powLimitBox->setText(QString::number(deviceConfigData.powLimit));
     ui->ahMaxBox->setText(QString::number(deviceConfigData.ahMax));
     ui->whMaxBox->setText(QString::number(deviceConfigData.whMax));
@@ -45,6 +45,7 @@ ConfigDialog::ConfigDialog(QWidget *parent, CmdConfigData& deviceConfigData_) :
     ui->beepOnBox->setText(QString::number(deviceConfigData.beepOn));
     ui->uSetBox->setText(QString::number(deviceConfigData.uSet));
     ui->iSetBox->setText(QString::number(deviceConfigData.iSet));
+    ui->curUnitBox->setText(QString::number(deviceConfigData.curUnit));
 }
 
 ConfigDialog::~ConfigDialog()
@@ -89,7 +90,7 @@ bool ConfigDialog::parseInput()
         deviceConfigData.uSetMax = parseInt(ui->uSetMaxBox->text());
         deviceConfigData.uSenseMin = parseInt(ui->uSenseMinBox->text());
         deviceConfigData.uNegative = parseInt(ui->uNegativeBox->text());
-        deviceConfigData.uCurLimit = parseInt(ui->uCurLimitBox->text());
+        deviceConfigData.uMainLimit = parseInt(ui->uCurLimitBox->text());
         deviceConfigData.powLimit = parseInt(ui->powLimitBox->text());
         deviceConfigData.ahMax = parseInt(ui->ahMaxBox->text());
         deviceConfigData.whMax = parseInt(ui->whMaxBox->text());
@@ -98,6 +99,7 @@ bool ConfigDialog::parseInput()
         deviceConfigData.beepOn = parseInt(ui->beepOnBox->text());
         deviceConfigData.uSet = parseInt(ui->uSetBox->text());
         deviceConfigData.iSet = parseInt(ui->iSetBox->text());
+        deviceConfigData.curUnit = parseInt(ui->curUnitBox->text());
 
         deviceConfigData.cmd = Cmd::WriteConfig;
         deviceConfigData.state = CmdState::Request;

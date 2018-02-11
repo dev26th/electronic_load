@@ -17,7 +17,7 @@
 #define DISPLAYS_SYM_n     0x54
 #define DISPLAYS_SYM_o     0x5c
 #define DISPLAYS_SYM_r     0x50
-#define DISPLAYS_SYM_t     0x5c
+#define DISPLAYS_SYM_t     0x78
 #define DISPLAYS_SYM_u     0x1c
 #define DISPLAYS_SYM_0     0x3f
 #define DISPLAYS_SYM_1     0x06

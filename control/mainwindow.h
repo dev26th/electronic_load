@@ -92,6 +92,7 @@ private:
     void updateFun();
     void setupTemperatureBox();
     void startUpgrade(const QByteArray& data);
+    void clearDeviceInfo();
 
 private:
     struct ToExecute {

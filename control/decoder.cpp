@@ -38,7 +38,7 @@ QByteArray formCmdData(const CmdData& data)
                 stream << d.uSetMax;
                 stream << d.uSenseMin;
                 stream << d.uNegative;
-                stream << d.uCurLimit;
+                stream << d.uMainLimit;
                 stream << d.powLimit;
                 stream << d.ahMax;
                 stream << d.whMax;
@@ -46,6 +46,7 @@ QByteArray formCmdData(const CmdData& data)
                 stream << d.beepOn;
                 stream << d.uSet;
                 stream << d.iSet;
+                stream << d.curUnit;
             }
             break;
 
@@ -100,7 +101,7 @@ CmdData* parseCmdData(const QByteArray& data)
     switch(cmd) {
         case Cmd::ReadConfig:
             {
-                if(data.size() != 65) return nullptr;
+                if(data.size() != 66) return nullptr;
 
                 CmdConfigData* res = new CmdConfigData(cmd, state);
                 stream >> res->iSetCoef.offset;
@@ -125,7 +126,7 @@ CmdData* parseCmdData(const QByteArray& data)
                 stream >> res->uSetMax;
                 stream >> res->uSenseMin;
                 stream >> res->uNegative;
-                stream >> res->uCurLimit;
+                stream >> res->uMainLimit;
                 stream >> res->powLimit;
                 stream >> res->ahMax;
                 stream >> res->whMax;
@@ -133,6 +134,7 @@ CmdData* parseCmdData(const QByteArray& data)
                 stream >> res->beepOn;
                 stream >> res->uSet;
                 stream >> res->iSet;
+                stream >> res->curUnit;
                 return res;
             }
 

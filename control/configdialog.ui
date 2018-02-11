@@ -26,42 +26,12 @@
       <property name="geometry">
        <rect>
         <x>0</x>
-        <y>0</y>
-        <width>419</width>
-        <height>924</height>
+        <y>-770</y>
+        <width>422</width>
+        <height>1179</height>
        </rect>
       </property>
       <layout class="QGridLayout" name="gridLayout">
-       <item row="6" column="0">
-        <widget class="QLabel" name="iSetMinLabel">
-         <property name="text">
-          <string>I-Set Minimum, mA</string>
-         </property>
-        </widget>
-       </item>
-       <item row="4" column="1">
-        <widget class="QLineEdit" name="uSupMinBox">
-         <property name="sizePolicy">
-          <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-           <horstretch>1</horstretch>
-           <verstretch>0</verstretch>
-          </sizepolicy>
-         </property>
-        </widget>
-       </item>
-       <item row="4" column="0">
-        <widget class="QLabel" name="uSupMinLabel">
-         <property name="sizePolicy">
-          <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
-           <horstretch>0</horstretch>
-           <verstretch>0</verstretch>
-          </sizepolicy>
-         </property>
-         <property name="text">
-          <string>U-Supply Minimum, raw</string>
-         </property>
-        </widget>
-       </item>
        <item row="0" column="0" colspan="2">
         <widget class="QGroupBox" name="iSetCoefBox">
          <property name="title">
@@ -99,6 +69,36 @@
            <widget class="QLineEdit" name="iSetCoefDivBox"/>
           </item>
          </layout>
+        </widget>
+       </item>
+       <item row="6" column="0">
+        <widget class="QLabel" name="iSetMinLabel">
+         <property name="text">
+          <string>I-Set Minimum, mA</string>
+         </property>
+        </widget>
+       </item>
+       <item row="4" column="1">
+        <widget class="QLineEdit" name="uSupMinBox">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+           <horstretch>1</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+        </widget>
+       </item>
+       <item row="4" column="0">
+        <widget class="QLabel" name="uSupMinLabel">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="text">
+          <string>U-Supply Minimum, raw</string>
+         </property>
         </widget>
        </item>
        <item row="2" column="0" colspan="2">
@@ -140,6 +140,12 @@
          </layout>
         </widget>
        </item>
+       <item row="9" column="1">
+        <widget class="QLineEdit" name="uSetMaxBox"/>
+       </item>
+       <item row="8" column="1">
+        <widget class="QLineEdit" name="uSetMinBox"/>
+       </item>
        <item row="1" column="0" colspan="2">
         <widget class="QGroupBox" name="uCurCoefBox">
          <property name="title">
@@ -179,12 +185,6 @@
          </layout>
         </widget>
        </item>
-       <item row="8" column="1">
-        <widget class="QLineEdit" name="uSetMinBox"/>
-       </item>
-       <item row="9" column="1">
-        <widget class="QLineEdit" name="uSetMaxBox"/>
-       </item>
        <item row="10" column="1">
         <widget class="QLineEdit" name="uSenseMinBox"/>
        </item>
@@ -194,6 +194,12 @@
           <string>U-Limit, mV</string>
          </property>
         </widget>
+       </item>
+       <item row="14" column="1">
+        <widget class="QLineEdit" name="ahMaxBox"/>
+       </item>
+       <item row="18" column="1">
+        <widget class="QLineEdit" name="uSetBox"/>
        </item>
        <item row="13" column="0">
         <widget class="QLabel" name="powLimitLabel">
@@ -216,6 +222,9 @@
          </property>
         </widget>
        </item>
+       <item row="6" column="1">
+        <widget class="QLineEdit" name="iSetMinBox"/>
+       </item>
        <item row="17" column="0">
         <widget class="QLabel" name="beepOnLabel">
          <property name="text">
@@ -230,8 +239,8 @@
          </property>
         </widget>
        </item>
-       <item row="6" column="1">
-        <widget class="QLineEdit" name="iSetMinBox"/>
+       <item row="7" column="1">
+        <widget class="QLineEdit" name="iSetMaxBox"/>
        </item>
        <item row="3" column="0" colspan="2">
         <widget class="QGroupBox" name="temperatureBox">
@@ -302,9 +311,6 @@
          </layout>
         </widget>
        </item>
-       <item row="7" column="1">
-        <widget class="QLineEdit" name="iSetMaxBox"/>
-       </item>
        <item row="11" column="0">
         <widget class="QLabel" name="uNegativeLabel">
          <property name="text">
@@ -340,12 +346,18 @@
          </property>
         </widget>
        </item>
+       <item row="11" column="1">
+        <widget class="QLineEdit" name="uNegativeBox"/>
+       </item>
        <item row="14" column="0">
         <widget class="QLabel" name="ahMaxLabel">
          <property name="text">
           <string>Ah Maximum, mAh</string>
          </property>
         </widget>
+       </item>
+       <item row="12" column="1">
+        <widget class="QLineEdit" name="uCurLimitBox"/>
        </item>
        <item row="19" column="0">
         <widget class="QLabel" name="iSetLabel">
@@ -354,32 +366,30 @@
          </property>
         </widget>
        </item>
-       <item row="11" column="1">
-        <widget class="QLineEdit" name="uNegativeBox"/>
-       </item>
-       <item row="12" column="1">
-        <widget class="QLineEdit" name="uCurLimitBox"/>
-       </item>
        <item row="13" column="1">
         <widget class="QLineEdit" name="powLimitBox"/>
-       </item>
-       <item row="14" column="1">
-        <widget class="QLineEdit" name="ahMaxBox"/>
        </item>
        <item row="15" column="1">
         <widget class="QLineEdit" name="whMaxBox"/>
        </item>
-       <item row="16" column="1">
-        <widget class="QLineEdit" name="funBox"/>
-       </item>
        <item row="17" column="1">
         <widget class="QLineEdit" name="beepOnBox"/>
        </item>
-       <item row="18" column="1">
-        <widget class="QLineEdit" name="uSetBox"/>
+       <item row="16" column="1">
+        <widget class="QLineEdit" name="funBox"/>
        </item>
        <item row="19" column="1">
         <widget class="QLineEdit" name="iSetBox"/>
+       </item>
+       <item row="20" column="1">
+        <widget class="QLineEdit" name="curUnitBox"/>
+       </item>
+       <item row="20" column="0">
+        <widget class="QLabel" name="curUnitLabel">
+         <property name="text">
+          <string>Current Unit</string>
+         </property>
+        </widget>
        </item>
       </layout>
      </widget>

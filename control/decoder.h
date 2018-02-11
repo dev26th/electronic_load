@@ -92,7 +92,7 @@ struct CmdConfigData : public CmdData {
     uint16_t         uSetMax;       // mV
     uint16_t         uSenseMin;     // mV
     uint16_t         uNegative;     // raw
-    uint16_t         uCurLimit;     // mV
+    uint16_t         uMainLimit;     // mV
     uint32_t         powLimit;      // mW
     uint32_t         ahMax;         // mAh
     uint32_t         whMax;         // mWh
@@ -100,6 +100,7 @@ struct CmdConfigData : public CmdData {
     uint8_t          beepOn;
     uint16_t         uSet;          // mV
     uint16_t         iSet;          // mA
+    uint8_t          curUnit;       // 0=mA, 1=100uA
 };
 
 struct CmdSettingData : public CmdData {

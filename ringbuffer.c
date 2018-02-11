@@ -2,7 +2,7 @@
 
 #include <stddef.h>
 
-#define SIZE 32
+#define SIZE 128
 
 static volatile uint8_t begin;
 static volatile uint8_t end;

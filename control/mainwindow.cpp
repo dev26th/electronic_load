@@ -143,6 +143,8 @@ MainWindow::MainWindow(QWidget *parent) :
     deviceMessageLabel->setToolTip("Device Status");
     deviceMessageLabel->setVisible(false);
     ui->statusBar->addWidget(deviceMessageLabel);
+
+    clearDeviceInfo();
 }
 
 MainWindow::~MainWindow()
@@ -236,6 +238,7 @@ void MainWindow::disconnectSer()
 
     ui->connectButton->setText("Connect");
     isConnected = false;
+    clearDeviceInfo();
 }
 
 void MainWindow::on_connectButton_clicked()
@@ -738,6 +741,11 @@ void MainWindow::startUpgrade(const QByteArray &data)
 
     delete dialog;
     executeNext();
+}
+
+void MainWindow::clearDeviceInfo()
+{
+    memset(&deviceConfigData, 0, sizeof(deviceConfigData));
 }
 
 void MainWindow::on_flasherError(QString msg)
