@@ -332,15 +332,12 @@ static void onResult_cal2Sec(const uint8_t* counts, uint8_t countMax, uint16_t c
 
 // ~13 us
 void SYSTEMTIMER_onTick(void) {
-    //GPIOD->ODR |= GPIO_ODR_7;
     BEEP_process();
     ENCODERBUTTON_cycle();
     BUTTON_cycle();
 
     ++sCount;
     sSum += (conn4 ? uSenseRaw : uMainRaw);
-
-    //GPIOD->ODR &= ~GPIO_ODR_7;
 }
 
 // 517 us in worst case
@@ -1765,11 +1762,11 @@ static void processUiEvent(void) {
     }
 }
 
-// PD2, PD7
+// PD2
 static void initDebug(void) {
-    GPIOD->DDR |= GPIO_DDR_2 | GPIO_DDR_7;  // output
-    GPIOD->CR1 |= GPIO_CR1_2 | GPIO_CR1_7;  // pull-push
-    GPIOD->CR2 |= GPIO_CR2_2 | GPIO_CR2_7;  // high speed
+    GPIOD->DDR |= GPIO_DDR_2;  // output
+    GPIOD->CR1 |= GPIO_CR1_2;  // pull-push
+    GPIOD->CR2 |= GPIO_CR2_2;  // high speed
     // GPIOD->ODR |= GPIO_ODR_2;
     // GPIOD->ODR &= ~GPIO_ODR_2;
     // __asm BSET 0x500F, #2 __endasm
@@ -1796,6 +1793,11 @@ int main(void) {
     BUTTON_init();
     DISPLAYS_init();
     initDebug();
+
+    // enable 5V on PD7 as power supplier for UART
+    GPIOD->DDR |= GPIO_DDR_7;  // output
+    GPIOD->CR1 |= GPIO_CR1_7;  // pull-push
+    GPIOD->ODR |= GPIO_ODR_7;  // high
 
     // allow interrupts, where ADC_start can be started, to be interrupted because ADC_start takes a long time
     setIrqPrio(IRQN_TIM2_UP, 1);
