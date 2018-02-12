@@ -198,7 +198,7 @@ static_assert(sizeof(struct Config) <= 128, "Config is bigger than EEPROM");
 static bool displayOverride;
 static uint8_t display[8];
 static uint8_t inputDisable;
-static uint16_t flowInterval = 0xFFFF;
+static uint16_t flowInterval = 1000; // ms
 static uint32_t lastFlow;
 static uint8_t commReply[18];
 
