@@ -1000,10 +1000,12 @@ static bool calcCal(uint32_t r1, uint32_t r2, uint16_t v1, uint16_t v2, struct V
 
     if(o < 0 || o > r1 || o > r2 || o > 0xFFFFuL) return false;
 
-    m = ((uint32_t)v1 << coef->div) / (r1 - o);
-
-    if(m > 0xFFFFuL) return false;
-
+	for(coef->div = 16; ; --coef->div) {
+		m = ((uint32_t)v1 << coef->div) / (r1 - o);
+		if(m <= 0xFFFFuL) break;
+		if(coef->div == 0) return false;
+	}
+	
     coef->offset = o;
     coef->mul = m;
 
@@ -1060,7 +1062,7 @@ static void endCalI() {
     iSetCoef.mul = CFG->iSetCoef.mul;
     iSetCoef.div = CFG->iSetCoef.div;
 
-    success = calcCal(cal1Disp, cal2Disp, cal1First, cal2First, &iSetCoef); // note: *Disp and *First are switched
+    success = calcCal(cal1Disp, cal2Disp, cal1First, cal2First, &iSetCoef); // note: *Disp and *First are swapped
 
     if(success) {
         FLASH_unlockData();
@@ -1434,7 +1436,9 @@ static void recalcConfigValues() {
     iSet = CFG->iSet;
     if(iSet < CFG->iSetMin)      iSet = CFG->iSetMin;
     else if(iSet > CFG->iSetMax) iSet = CFG->iSetMax;
+
     iSetToDisp();
+    updateISet();
 }
 
 static inline void initialState(void) {
@@ -1551,6 +1555,19 @@ static void prepareActualSettings(uint8_t* buf) {
 }
 
 static void resetDevice(void) {
+    if(!displayOverride) {
+        displayOverride = true;
+        display[0] = DISPLAYS_SYM_b;
+        display[1] = DISPLAYS_SYM_o;
+        display[2] = DISPLAYS_SYM_o;
+        display[3] = DISPLAYS_SYM_t;
+        display[4] = DISPLAYS_SYM_DASH;
+        display[5] = DISPLAYS_SYM_DASH;
+        display[6] = DISPLAYS_SYM_DASH;
+        display[7] = DISPLAYS_SYM_SPACE;
+        updateDisplays();
+    }
+
     IWDG->KR = IWDG_KR_KEY_ENABLE;
     while(true) {}
 }
@@ -1642,6 +1659,7 @@ static void processUartCommand(const uint8_t* buf, uint8_t size) {
                 uSet = ((uint16_t)buf[1] << 8) | buf[2];
                 iSet = ((uint16_t)buf[3] << 8) | buf[4];
                 iSetToDisp();
+                updateISet();
                 commitUartCommand(buf[0]);
             }
             break;

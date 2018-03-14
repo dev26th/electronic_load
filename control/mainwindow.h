@@ -72,6 +72,10 @@ private slots:
 
     void on_flasherError(QString msg);
 
+    void on_uLimitBox_editingFinished();
+
+    void on_currentBox_editingFinished();
+
 signals:
     void portConnect(QString portName);
     void portDisconnect();
@@ -93,6 +97,7 @@ private:
     void setupTemperatureBox();
     void startUpgrade(const QByteArray& data);
     void clearDeviceInfo();
+    void updateDeviceSettings();
 
 private:
     struct ToExecute {

@@ -380,6 +380,14 @@ void MainWindow::setupTemperatureBox()
     ui->temperatureBox->setColorMap(cMap);
 }
 
+void MainWindow::updateDeviceSettings() {
+    setupTemperatureBox();
+    ui->uLimitBox->setMinimum((double)deviceConfigData.uSetMin / 1000.0);
+    ui->uLimitBox->setMaximum((double)deviceConfigData.uSetMax / 1000.0);
+    ui->currentBox->setMinimum((double)deviceConfigData.iSetMin / 1000.0);
+    ui->currentBox->setMaximum((double)deviceConfigData.iSetMax / 1000.0);
+}
+
 void MainWindow::on_serData(QByteArray d, qint64 timestamp)
 {
     CmdData* cmd = parseCmdData(d);
@@ -402,8 +410,8 @@ void MainWindow::on_serData(QByteArray d, qint64 timestamp)
                             ui->fun2Button->setChecked(true);
 
                         ui->soundBox->setChecked(deviceConfigData.beepOn);
-                        setupTemperatureBox();
                         updateFun();
+                        updateDeviceSettings();
                     }
                     break;
 
@@ -554,7 +562,19 @@ void MainWindow::on_limitUpdateButton_clicked()
     CmdSettingData d(Cmd::WriteSettings, CmdState::Request);
     d.u = (uint16_t)(ui->uLimitBox->value() * 1000 + 0.5);
     d.i = (uint16_t)(ui->currentBox->value() * 1000 + 0.5);
-    emit send(formCmdData(d));
+    toExecute.enqueue(ToExecute(ToExecute::Action::Send, formCmdData(d)));
+    toExecute.enqueue(ToExecute(ToExecute::Action::Send, formCmdData(Cmd::ReadSettings)));
+    executeNext();
+}
+
+void MainWindow::on_uLimitBox_editingFinished()
+{
+    on_limitUpdateButton_clicked();
+}
+
+void MainWindow::on_currentBox_editingFinished()
+{
+    on_limitUpdateButton_clicked();
 }
 
 void MainWindow::on_actionDeviceConfiguration_triggered()
@@ -572,7 +592,8 @@ void MainWindow::on_actionDeviceConfiguration_triggered()
 
 void MainWindow::on_energyResetButton_clicked()
 {
-    emit send(formCmdData(Cmd::ResetState));
+    toExecute.enqueue(ToExecute(ToExecute::Action::Send, formCmdData(Cmd::ResetState)));
+    executeNext();
 }
 
 // note: length not checked
