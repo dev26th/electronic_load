@@ -4,6 +4,8 @@
 
 #include <QDebug>
 
+#include "crc.h"
+
 Comm::Comm()
   : state(State::Idle)
 {
@@ -43,13 +45,6 @@ void Comm::portDisconnect()
 {
     ser->close();
     setState(State::Idle);
-}
-
-static char crc8(char crc, char b) {
-    crc ^= b;
-    for(uint8_t i = 0; i < 8; ++i)
-        crc = crc & 0x80 ? (crc << 1) ^ 0x07 : crc << 1;
-    return crc;
 }
 
 void Comm::send(QByteArray data)

@@ -9,6 +9,7 @@ CurveData::CurveData(SampleStorage& storage_)
 
     connect(&storage, &SampleStorage::afterClear, this, &CurveData::cleared);
     connect(&storage, &SampleStorage::afterAppend, this, &CurveData::added);
+    connect(&storage, &SampleStorage::afterAppendMultiple, this, &CurveData::addedMultiple);
     // note: SampleStorage::afterDelete is not connected
     //       - min/max value will not be recalculated when samples are deleted via limit
 }
@@ -56,4 +57,10 @@ void CurveData::added(const Sample& sample)
         if(value < minValue) minValue = value;
         if(value > maxValue) maxValue = value;
     }
+}
+
+void CurveData::addedMultiple(const QVector<Sample> &list)
+{
+    for(auto i = list.begin(), e = list.end(); i != e; ++i)
+        added(*i);
 }

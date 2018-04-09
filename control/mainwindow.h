@@ -76,11 +76,14 @@ private slots:
 
     void on_currentBox_editingFinished();
 
+    void on_actionLoadRawLog_triggered();
+
 signals:
     void portConnect(QString portName);
     void portDisconnect();
     void send(QByteArray data);
     void sample(Sample s);
+    void sampleMultiple(const QVector<Sample> &list);
     void upgradeDevice(QString portName, QByteArray fileContent);
     void cancelUpgradeDevice();
 
@@ -98,6 +101,7 @@ private:
     void startUpgrade(const QByteArray& data);
     void clearDeviceInfo();
     void updateDeviceSettings();
+    Sample parseSample(CmdStateData* c, qint64 timestamp);
 
 private:
     struct ToExecute {

@@ -90,7 +90,17 @@ void TableModel::beforeAppend(const Sample& sample)
     beginInsertRows(QModelIndex(), storage.size(), storage.size());
 }
 
+void TableModel::beforeAppendMultiple(const QVector<Sample> &list)
+{
+    beginInsertRows(QModelIndex(), storage.size(), storage.size() + list.size() - 1);
+}
+
 void TableModel::afterAppend()
+{
+    endInsertRows();
+}
+
+void TableModel::afterAppendMultiple()
 {
     endInsertRows();
 }

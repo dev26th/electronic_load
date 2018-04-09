@@ -17,7 +17,9 @@ public:
     QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
 
     void beforeAppend(const Sample &sample);
+    void beforeAppendMultiple(const QVector<Sample> &list);
     void afterAppend();
+    void afterAppendMultiple();
     void beforeClear();
     void afterClear();
     void beforeDelete(size_t n);

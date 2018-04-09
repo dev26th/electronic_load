@@ -4,6 +4,7 @@
 #include "sample.h"
 
 #include <QObject>
+#include <QVector>
 
 #include <deque>
 
@@ -23,15 +24,18 @@ public:
 
 public slots:
     void append(const Sample &sample);
+    void appendMultiple(const QVector<Sample> &list);
     void setEnabled(bool enabled) { this->enabled = enabled; }
 
 signals:
     void beforeAppend(const Sample &sample);
+    void beforeAppendMultiple(const QVector<Sample> &list);
     void afterAppend(const Sample &sample);
+    void afterAppendMultiple(const QVector<Sample> &list);
     void beforeClear();
     void afterClear();
-    void beforeDelete(size_t n); // before delteing of first n samples
-    void afterDelete(size_t n);  // after delteing of first n samples
+    void beforeDelete(size_t n); // before deleting of first n samples
+    void afterDelete(size_t n);  // after deleting of first n samples
 
 private:
     size_t limit;

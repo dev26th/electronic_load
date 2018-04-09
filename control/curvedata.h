@@ -22,6 +22,7 @@ public:
 public slots:
     void cleared();
     void added(const Sample& sample);
+    void addedMultiple(const QVector<Sample> &list);
 
 private:
     SampleStorage& storage;

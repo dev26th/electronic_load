@@ -28,6 +28,24 @@ void SampleStorage::append(const Sample & sample)
     emit afterAppend(sample);
 }
 
+void SampleStorage::appendMultiple(const QVector<Sample> &list)
+{
+    if(!enabled) return;
+
+    if(!begin) begin = list.front().timestamp;
+
+    if(samples.size() >= limit)
+        del(samples.size() - limit + list.size());
+
+    emit beforeAppendMultiple(list);
+
+    // FIXME list.size() > limit
+    for(auto i = list.begin(), e = list.end(); i != e; ++i)
+        samples.push_back(*i);
+
+    emit afterAppendMultiple(list);
+}
+
 void SampleStorage::del(size_t n)
 {
     if(n > samples.size())

@@ -148,6 +148,7 @@
     <property name="title">
      <string>&amp;File</string>
     </property>
+    <addaction name="actionLoadRawLog"/>
     <addaction name="actionSaveLog"/>
     <addaction name="separator"/>
     <addaction name="actionExit"/>
@@ -513,6 +514,11 @@
   <action name="actionDeviceConfiguration">
    <property name="text">
     <string>Device Con&amp;figuration</string>
+   </property>
+  </action>
+  <action name="actionLoadRawLog">
+   <property name="text">
+    <string>Load Raw Log</string>
    </property>
   </action>
  </widget>

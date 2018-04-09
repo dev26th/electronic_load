@@ -25,7 +25,8 @@ SOURCES += main.cpp\
     configdialog.cpp \
     flasherworker.cpp \
     flasher.cpp \
-    flashprogressdialog.cpp
+    flashprogressdialog.cpp \
+    crc.cpp
 
 HEADERS  += mainwindow.h \
     decoder.h \
@@ -42,7 +43,8 @@ HEADERS  += mainwindow.h \
     configdialog.h \
     flasherworker.h \
     flasher.h \
-    flashprogressdialog.h
+    flashprogressdialog.h \
+    crc.h
 
 FORMS    += mainwindow.ui \
     aboutdialog.ui \

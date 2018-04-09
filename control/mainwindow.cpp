@@ -5,6 +5,7 @@
 #include "aboutdialog.h"
 #include "configdialog.h"
 #include "flashprogressdialog.h"
+#include "crc.h"
 
 #include <qwt_plot_curve.h>
 #include <qwt_plot_grid.h>
@@ -86,7 +87,11 @@ MainWindow::MainWindow(QWidget *parent) :
 
     // storage
     connect(this, &MainWindow::sample, &storage, &SampleStorage::append);
+    connect(this, &MainWindow::sampleMultiple, &storage, &SampleStorage::appendMultiple);
     connect(&storage, &SampleStorage::afterAppend, [this]() {
+        if(!this->ui->graphDock->isHidden()) this->ui->graphPlot->replot();
+    } );
+    connect(&storage, &SampleStorage::afterAppendMultiple, [this]() {
         if(!this->ui->graphDock->isHidden()) this->ui->graphPlot->replot();
     } );
     connect(&storage, &SampleStorage::afterClear, [this]() {
@@ -102,7 +107,9 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->tableView->setColumnWidth(0, 140);
     ui->tableView->setColumnWidth(1, 80);
     connect(&storage, &SampleStorage::beforeAppend, tableModel, &TableModel::beforeAppend);
+    connect(&storage, &SampleStorage::beforeAppendMultiple, tableModel, &TableModel::beforeAppendMultiple);
     connect(&storage, &SampleStorage::afterAppend, tableModel, &TableModel::afterAppend);
+    connect(&storage, &SampleStorage::afterAppendMultiple, tableModel, &TableModel::afterAppendMultiple);
     connect(&storage, &SampleStorage::beforeClear, tableModel, &TableModel::beforeClear);
     connect(&storage, &SampleStorage::afterClear, tableModel, &TableModel::afterClear);
     connect(&storage, &SampleStorage::beforeDelete, tableModel, &TableModel::beforeDelete);
@@ -388,6 +395,29 @@ void MainWindow::updateDeviceSettings() {
     ui->currentBox->setMaximum((double)deviceConfigData.iSetMax / 1000.0);
 }
 
+Sample MainWindow::parseSample(CmdStateData *c, qint64 timestamp)
+{
+    Sample s;
+    if(this->interval > 0)
+        s.timestamp = ((timestamp + this->interval/2) / this->interval) * this->interval; // round up to interval borders
+    else
+        s.timestamp = timestamp;
+
+    bool is4Wire = (c->uSense + 100 >= c->uMain);
+    uint16_t u = (is4Wire ? c->uSense : c->uMain);
+    if(abs((int)u - (int)deviceLastU) < U_THRESHOLD)
+        u = deviceLastU;
+    else
+        deviceLastU = u;
+
+    s.u = qFloor((double)u / 10.0 + 0.5) / 100.0; // FIXME good? or s.u = (double)u / 1000;
+    s.i = (double)deviceCurrent / 1000;
+    s.ah = (double)c->ah / 1000;
+    s.wh = (double)c->wh / 1000;
+
+    return s;
+}
+
 void MainWindow::on_serData(QByteArray d, qint64 timestamp)
 {
     CmdData* cmd = parseCmdData(d);
@@ -435,24 +465,7 @@ void MainWindow::on_serData(QByteArray d, qint64 timestamp)
                 case Cmd::GetState:
                     {
                         CmdStateData* c = static_cast<CmdStateData*>(cmd);
-
-                        Sample s;
-                        s.timestamp = ((timestamp + this->interval/2) / this->interval) * this->interval; // round up to interval borders
-
-                        bool is4Wire = (c->uSense + 100 >= c->uMain);
-                        //qDebug() << c->uSense << c->uMain << is4Wire;
-                        uint16_t u = (is4Wire ? c->uSense : c->uMain);
-                        //qDebug() << u << deviceLastU << abs((int)u - (int)deviceLastU);
-                        if(abs((int)u - (int)deviceLastU) < U_THRESHOLD)
-                            u = deviceLastU;
-                        else
-                            deviceLastU = u;
-
-                        s.u = qFloor((double)u / 10.0 + 0.5) / 100.0; // FIXME good? or s.u = (double)u / 1000;
-                        s.i = (double)deviceCurrent / 1000;
-                        s.ah = (double)c->ah / 1000;
-                        s.wh = (double)c->wh / 1000;
-
+                        Sample s = parseSample(c, timestamp);
                         if(c->mode == DeviceMode::Fun1Run || c->mode == DeviceMode::Fun2Run)
                             emit sample(s);
 
@@ -489,6 +502,7 @@ void MainWindow::on_serData(QByteArray d, qint64 timestamp)
                         deviceMessageLabel->setText(deviceMessage);
                         deviceMessageLabel->setVisible(true);
 
+                        bool is4Wire = (c->uSense + 100 >= c->uMain);
                         ui->uActualBox->setText(QString("%L1 V").arg(s.u, 0, 'f', 2));
                         ui->energyBox->setText(QString("%L1 A⋅h (%L2 W⋅h)").arg(s.ah, 0, 'f', 3).arg(s.wh, 0, 'f', 3));
                         ui->wireLabel->setVisible(is4Wire);
@@ -773,4 +787,69 @@ void MainWindow::on_flasherError(QString msg)
 {
     emit cancelUpgradeDevice();
     showError(msg);
+}
+
+void MainWindow::on_actionLoadRawLog_triggered()
+{
+    QString fileName = QFileDialog::getOpenFileName(this,
+        tr("Select RAW-log file"), "",
+        tr("Text Files (*.txt *.raw *.log);;All Files (*)"));
+    if(fileName.isEmpty()) return;
+
+    QFile inputFile(fileName);
+    int skippedLines = 0;
+    QVector<Sample> list;
+    if(inputFile.open(QIODevice::ReadOnly)) {
+        QTextStream in(&inputFile);
+        for(;;) {
+            QString line = in.readLine();
+            if(line.isNull()) break;
+
+            QStringList tokens = line.split(',');
+            if(tokens.length() != 2) {
+                ++skippedLines;
+                continue;
+            }
+
+            bool ok;
+            qint64 timestamp = tokens[0].toLongLong(&ok);
+            if(!ok) {
+                ++skippedLines;
+                continue;
+            }
+
+            if(!tokens[1].startsWith("s") && !tokens[1].startsWith("S")) {
+                ++skippedLines;
+                continue;
+            }
+
+            QByteArray data = QByteArray::fromHex(tokens[1].toUtf8()); // 'S' will be skipped
+            char crc = std::accumulate(data.begin(), data.end(), 0, crc8);
+            if(crc != 0) {
+                ++skippedLines;
+                continue;
+            }
+
+            QByteArray buf;
+            buf.append(data.data(), data.size()-1);
+
+            CmdData* cmd = parseCmdData(buf);
+            if(cmd != nullptr && cmd->state == CmdState::Event && cmd->cmd == Cmd::GetState) {
+                CmdStateData* c = static_cast<CmdStateData*>(cmd);
+                Sample s = parseSample(c, timestamp * 1000);
+                if(c->mode == DeviceMode::Fun1Run || c->mode == DeviceMode::Fun2Run)
+                    list.push_back(s);
+            }
+        }
+        inputFile.close();
+
+        if(!list.isEmpty())
+            emit sampleMultiple(list);
+
+        if(skippedLines > 0)
+            showError(QString("Read successfully, but %1 lines skipped.").arg(skippedLines));
+    }
+    else {
+        showError(QString("Cannot opene file %1").arg(fileName));
+    }
 }
